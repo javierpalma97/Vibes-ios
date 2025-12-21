@@ -100,3 +100,6 @@ Downloads/
 ## Temporary files
 tmp/
 temp/
+
+## API Keys (keep APIKeys.plist.example in repo)
+Vibes/Vibes/Core/Network/InnerTube/APIKeys.plist

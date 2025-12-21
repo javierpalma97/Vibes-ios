@@ -49,7 +49,18 @@ class InnerTubeClient {
     static let shared = InnerTubeClient()
 
     private let baseURL = "https://music.youtube.com/youtubei/v1"
-    private let apiKey = "YOUR_API_KEY_HERE"
+    
+    // Load API key from plist file, fallback to hardcoded value if not found
+    private var apiKey: String {
+        if let path = Bundle.main.path(forResource: "APIKeys", ofType: "plist"),
+           let plist = NSDictionary(contentsOfFile: path),
+           let key = plist["YouTubeAPIKey"] as? String,
+           !key.isEmpty && key != "YOUR_API_KEY_HERE" {
+            return key
+        }
+        // Fallback to default key (public YouTube web client key)
+        return "YOUR_API_KEY_HERE"
+    }
 
     private var visitorData: String?
     private var dataSyncId: String?
