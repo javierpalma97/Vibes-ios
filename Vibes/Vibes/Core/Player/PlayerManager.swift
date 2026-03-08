@@ -52,6 +52,7 @@ class PlayerManager: NSObject, ObservableObject {
     private var timeObserver: Any?
     private var statusObserver: NSKeyValueObservation?
     private var itemEndObserver: NSObjectProtocol?
+    private var hasTriggeredEndForCurrentItem: Bool = false
 
     private let ytMusic = YouTubeMusic.shared
     private var cancellables = Set<AnyCancellable>()
@@ -90,11 +91,19 @@ class PlayerManager: NSObject, ObservableObject {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
-            self.currentTime = time.seconds
-
-            // Update lyrics current line
             Task { @MainActor in
+                self.currentTime = time.seconds
                 LyricsManager.shared.updateCurrentLine(currentTime: time.seconds)
+
+                // Safety net: if playback passes the real song duration (YouTube API),
+                // AVPlayerItemDidPlayToEndTime may not have fired (stream asset can be
+                // longer than the actual audio). Force end-of-track handling here.
+                let margin: TimeInterval = 1.5
+                if self.duration > margin,
+                   time.seconds >= self.duration - margin,
+                   !self.hasTriggeredEndForCurrentItem {
+                    self.handleItemEnd()
+                }
             }
         }
 
@@ -110,10 +119,18 @@ class PlayerManager: NSObject, ObservableObject {
     }
 
     private func setupNotifications() {
-        // Observe when item finishes playing
+        // itemEndObserver is registered per-item in observeItemEnd(for:)
+    }
+
+    /// Register the end-of-track notification scoped to a specific player item.
+    private func observeItemEnd(for item: AVPlayerItem) {
+        if let old = itemEndObserver {
+            NotificationCenter.default.removeObserver(old)
+            itemEndObserver = nil
+        }
         itemEndObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: nil,
+            object: item,
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
@@ -200,6 +217,7 @@ class PlayerManager: NSObject, ObservableObject {
 
     func playSong(_ song: Song) async {
         print("🎵 [Player] Starting to play: \(song.title)")
+        hasTriggeredEndForCurrentItem = false
         self.currentSong = song
         self.playerState = .loading
         self.duration = 0  // Reset duration before loading new song
@@ -269,18 +287,30 @@ class PlayerManager: NSObject, ObservableObject {
                 }
             }
 
+            // Update duration - prioritize YouTube API duration over stored duration
+            if let ytDuration = youtubeDuration {
+                self.duration = ytDuration
+                // Tell AVPlayer to end the item at the real song duration so
+                // AVPlayerItemDidPlayToEndTime fires at the right time, even
+                // when the underlying stream asset is longer than the audio.
+                newPlayerItem.forwardPlaybackEndTime = CMTime(
+                    seconds: ytDuration,
+                    preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+                print("🎵 [Player] Set duration from YouTube API: \(ytDuration)s for \(song.title)")
+            } else if let duration = song.duration {
+                self.duration = duration
+                newPlayerItem.forwardPlaybackEndTime = CMTime(
+                    seconds: duration,
+                    preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+                print("🎵 [Player] Set duration from song.duration: \(duration)s for \(song.title)")
+            }
+
             // Replace current item
             self.playerItem = newPlayerItem
             player?.replaceCurrentItem(with: newPlayerItem)
 
-            // Update duration - prioritize YouTube API duration over stored duration
-            if let ytDuration = youtubeDuration {
-                self.duration = ytDuration
-                print("🎵 [Player] Set duration from YouTube API: \(ytDuration)s for \(song.title)")
-            } else if let duration = song.duration {
-                self.duration = duration
-                print("🎵 [Player] Set duration from song.duration: \(duration)s for \(song.title)")
-            }
+            // Observe end notification scoped to this specific item
+            observeItemEnd(for: newPlayerItem)
 
             // Update now playing info
             updateNowPlayingInfo()
@@ -462,19 +492,25 @@ class PlayerManager: NSObject, ObservableObject {
     }
 
     private func handleItemEnd() {
+        guard !hasTriggeredEndForCurrentItem else { return }
+        hasTriggeredEndForCurrentItem = true
+
+        // Stop the player immediately so the timer doesn't keep running
+        // while we load the next track asynchronously.
+        player?.pause()
+
         // Track play event (matching Android)
         if let song = currentSong, duration > 0 {
-            let playTimeMs = Int64(duration * 1000) // Convert to milliseconds
+            let playTimeMs = Int64(duration * 1000)
             LibraryManager.shared.trackPlayEvent(songId: song.id, playTime: playTimeMs)
         }
 
         switch repeatMode {
         case .one:
-            // Replay current song
+            hasTriggeredEndForCurrentItem = false
             seek(to: 0)
             play()
         case .all, .off:
-            // Play next song
             playNext()
         }
     }
