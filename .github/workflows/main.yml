@@ -1,7 +1,7 @@
 name: Build Unsigned iOS IPA
 
 on:
-  workflow_dispatch: # Permite ejecutar la compilación manualmente con un botón
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,38 +10,68 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias de CocoaPods (si existen)
+      - name: Instalar dependencias (CocoaPods si existe)
         run: |
-          if [ -f "Podfile" ]; then
+          # Busca el archivo Podfile en cualquier subcarpeta
+          PODFILE=$(find . -name "Podfile" | head -n 1)
+          if [ -n "$PODFILE" ]; then
+            echo "Podfile encontrado en $PODFILE"
+            cd "$(dirname "$PODFILE")"
             sudo gem install cocoapods
             pod install
-          fi
-
-      - name: Compilar el proyecto sin firmar
-        run: |
-          # Detectar si usa Workspace (CocoaPods) o Project estándar
-          if ls *.xcworkspace 1> /dev/null 2>&1; then
-            PROJECT_ARG="-workspace $(ls *.xcworkspace | head -n 1)"
-            SCHEME_ARG="-scheme $(xcodebuild -workspace $(ls *.xcworkspace | head -n 1) -list | awk '/Schemes:/{getline; print $1}')"
           else
-            PROJECT_ARG="-project $(ls *.xcodeproj | head -n 1)"
-            SCHEME_ARG="-scheme $(xcodebuild -project $(ls *.xcodeproj | head -n 1) -list | awk '/Schemes:/{getline; print $1}')"
+            echo "No se encontró Podfile. Omitiendo este paso."
           fi
 
-          # Ejecutar la compilación
-          xcodebuild clean build $PROJECT_ARG $SCHEME_ARG \
-            -configuration Release \
-            -sdk iphoneos \
-            -arch arm64 \
-            CONFIGURATION_BUILD_DIR=$(pwd)/build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+      - name: Encontrar y compilar el proyecto sin firmar
+        run: |
+          # Crear una carpeta global para que el IPA vaya siempre al mismo sitio
+          BUILD_DIR="$GITHUB_WORKSPACE/build_output"
+          mkdir -p "$BUILD_DIR"
+
+          # Buscar workspace o project ignorando las carpetas de CocoaPods
+          WORKSPACE=$(find . -name "*.xcworkspace" -not -path "*/Pods/*" | head -n 1)
+          PROJECT=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" | head -n 1)
+
+          if [ -n "$WORKSPACE" ]; then
+            echo "Usando Workspace: $WORKSPACE"
+            cd "$(dirname "$WORKSPACE")"
+            PROJECT_FILE=$(basename "$WORKSPACE")
+            SCHEME_NAME=$(xcodebuild -workspace "$PROJECT_FILE" -list | awk '/Schemes:/{getline; print $0}' | xargs)
+            
+            xcodebuild clean build -workspace "$PROJECT_FILE" -scheme "$SCHEME_NAME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -arch arm64 \
+              CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO
+              
+          elif [ -n "$PROJECT" ]; then
+            echo "Usando Project: $PROJECT"
+            cd "$(dirname "$PROJECT")"
+            PROJECT_FILE=$(basename "$PROJECT")
+            SCHEME_NAME=$(xcodebuild -project "$PROJECT_FILE" -list | awk '/Schemes:/{getline; print $0}' | xargs)
+            
+            xcodebuild clean build -project "$PROJECT_FILE" -scheme "$SCHEME_NAME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -arch arm64 \
+              CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO
+          else
+            echo "Error: No se encontró ningún archivo .xcworkspace ni .xcodeproj"
+            exit 1
+          fi
 
       - name: Empaquetar como archivo .IPA
         run: |
+          cd "$GITHUB_WORKSPACE"
           mkdir -p Payload
-          mv build/*.app Payload/
+          mv build_output/*.app Payload/
           zip -r Vibes-unsigned.ipa Payload
 
       - name: Subir IPA para descargar
