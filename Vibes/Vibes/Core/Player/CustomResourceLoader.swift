@@ -172,24 +172,6 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             let data = combinedData
             let httpResponse = httpResponseUnwrapped
 
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ [ResourceLoader] Not an HTTP response")
-                loadingRequest.finishLoading(with: NSError(domain: "CustomResourceLoader", code: -1))
-                return
-            }
-
-            print("✅ [ResourceLoader] Got response: \(httpResponse.statusCode)")
-            print("✅ [ResourceLoader] Content-Length: \(httpResponse.value(forHTTPHeaderField: "Content-Length") ?? "unknown")")
-            print("✅ [ResourceLoader] Content-Type: \(httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown")")
-            await MainActor.run { DebugLogger.shared.log("✅ loader HTTP \(httpResponse.statusCode) len=\(httpResponse.value(forHTTPHeaderField: "Content-Length") ?? "?")") }
-
-            guard (200...299).contains(httpResponse.statusCode) || httpResponse.statusCode == 206 else {
-                print("❌ [ResourceLoader] HTTP error: \(httpResponse.statusCode)")
-                await MainActor.run { DebugLogger.shared.log("❌ loader HTTP \(httpResponse.statusCode) url=\(url.absoluteString.prefix(80))") }
-                loadingRequest.finishLoading(with: NSError(domain: "CustomResourceLoader", code: httpResponse.statusCode))
-                return
-            }
-
             // Fill in content information – prioritize Content-Range total over Content-Length (chunk size)
             if let contentInfoRequest = loadingRequest.contentInformationRequest {
                 // Use proper UTI for AVFoundation, not raw mimeType with codecs
