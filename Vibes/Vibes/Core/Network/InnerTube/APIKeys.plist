@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>YouTubeAPIKey</key>
+	<string>AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30</string>
+	<key>WEB_REMIX_API_KEY</key>
+	<string>AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30</string>
+	<key>ANDROID_MUSIC_API_KEY</key>
+	<string>AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI</string>
+	<key>ANDROID_API_KEY</key>
+	<string>AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w</string>
+	<key>IOS_API_KEY</key>
+	<string>AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc</string>
+	<key>WEB_API_KEY</key>
+	<string>AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3</string>
+	<key>TVHTML5_API_KEY</key>
+	<string>AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8</string>
+</dict>
+</plist>
