@@ -170,42 +170,42 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
             // Use combinedData and httpResponseUnwrapped from here on
             let data = combinedData
-            let httpResponse = httpResponseUnwrapped
+            let finalResponse = httpResponseUnwrapped
 
             // Fill in content information – prioritize Content-Range total over Content-Length (chunk size)
             if let contentInfoRequest = loadingRequest.contentInformationRequest {
                 // Use proper UTI for AVFoundation, not raw mimeType with codecs
                 // googlevideo returns audio/mp4 but AVFoundation expects public.mpeg-4-audio / com.apple.quicktime-movie
                 let uti: String
-                if let mime = httpResponse.mimeType, mime.contains("audio") {
+                if let mime = finalResponse.mimeType, mime.contains("audio") {
                     uti = "public.mpeg-4-audio"
-                } else if let mime = httpResponse.mimeType, mime.contains("video") {
+                } else if let mime = finalResponse.mimeType, mime.contains("video") {
                     uti = "public.mpeg-4"
                 } else {
-                    uti = httpResponse.mimeType ?? "public.mpeg-4"
+                    uti = finalResponse.mimeType ?? "public.mpeg-4"
                 }
                 contentInfoRequest.contentType = uti
-                await MainActor.run { DebugLogger.shared.log("📄 contentType UTI=\(uti) mime=\(httpResponse.mimeType ?? "?")") }
+                await MainActor.run { DebugLogger.shared.log("📄 contentType UTI=\(uti) mime=\(finalResponse.mimeType ?? "?")") }
 
                 // Get total content length – MUST use Content-Range for 206 responses
                 var contentLength: Int64 = 0
-                if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") {
+                if let contentRange = finalResponse.value(forHTTPHeaderField: "Content-Range") {
                     // Parse "bytes 0-999/1718053" format
                     let components = contentRange.components(separatedBy: "/")
                     if components.count == 2, let total = Int64(components[1]) {
                         contentLength = total
                     }
                 }
-                if contentLength == 0, let contentLengthString = httpResponse.value(forHTTPHeaderField: "Content-Length"),
+                if contentLength == 0, let contentLengthString = finalResponse.value(forHTTPHeaderField: "Content-Length"),
                    let length = Int64(contentLengthString) {
                     contentLength = length
-                    // If we only have Content-Length for a Range request, it's the chunk size, not total
-                    // Try to infer total from Content-Range if available, otherwise keep chunk size as fallback
                 }
+                // Fallback to totalLengthFromServer if still 0
+                if contentLength == 0 { contentLength = totalLengthFromServer }
 
                 contentInfoRequest.contentLength = contentLength
                 contentInfoRequest.isByteRangeAccessSupported = true
-                print("✅ [ResourceLoader] Content info: length=\(contentLength), type=\(mimeType ?? "nil")")
+                print("✅ [ResourceLoader] Content info: length=\(contentLength), type=\(mimeType ?? finalResponse.mimeType ?? "nil")")
             }
 
             // Provide the data - only the amount originally requested
