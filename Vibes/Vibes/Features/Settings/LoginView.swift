@@ -293,24 +293,30 @@ struct WebViewRepresentable: UIViewRepresentable {
 
             print("🍪 [Login] Found \(allCookies.count) total cookies in WKWebView store")
 
-            // CRITICAL: Only save YouTube domain cookies!
-            // Android's CookieManager.getCookie("https://music.youtube.com") only returns
-            // cookies for .youtube.com domain, NOT .google.com cookies
-            // .google.com cookies are for accounts.google.com and shouldn't be sent to music.youtube.com
-            let youtubeDomains = [".youtube.com", "youtube.com", "music.youtube.com"]
+            // Keep all YouTube + Google auth cookies (SAPISID lives on google.com for some accounts)
+            // This fixes missing SAPISID leading to auth failures (Sync failed: vibes.innertubeError 0)
+            let allowedDomains = [".youtube.com", "youtube.com", "music.youtube.com", ".google.com", "google.com", ".youtube-nocookie.com"]
             let filteredCookies = allCookies.filter { cookie in
-                youtubeDomains.contains { domain in
+                allowedDomains.contains { domain in
                     cookie.domain == domain || cookie.domain.hasSuffix(domain)
                 }
             }
 
-            print("🍪 [Login] Filtered to \(filteredCookies.count) YouTube-only cookies:")
-            for cookie in filteredCookies {
+            // Fallback: if filtering yields no SAPISID, include all cookies (better than missing auth)
+            var finalCookies = filteredCookies
+            let hasSAPISID = filteredCookies.contains { $0.name == "SAPISID" || $0.name == "__Secure-3PAPISID" }
+            if !hasSAPISID {
+                print("⚠️ [Login] No SAPISID in filtered set, including all cookies as fallback")
+                finalCookies = allCookies
+            }
+
+            print("🍪 [Login] Filtered to \(finalCookies.count) cookies:")
+            for cookie in finalCookies {
                 print("   - \(cookie.name) (domain: \(cookie.domain), httpOnly: \(cookie.isHTTPOnly))")
             }
 
             // Format as cookie header string (matching Android's format)
-            return filteredCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            return finalCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
         }
     }
 }

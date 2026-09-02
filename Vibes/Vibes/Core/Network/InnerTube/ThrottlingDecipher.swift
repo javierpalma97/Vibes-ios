@@ -109,7 +109,15 @@ final class ThrottlingDecipher {
             return cached
         }
 
-        guard let url = URL(string: jsUrl) else {
+        // Normalize URL (YouTube sometimes returns //www.youtube.com/... without https)
+        var normalized = jsUrl
+        if normalized.hasPrefix("//") {
+            normalized = "https:" + normalized
+        } else if normalized.hasPrefix("/") {
+            normalized = "https://www.youtube.com" + normalized
+        }
+
+        guard let url = URL(string: normalized) else {
             throw ThrottlingError.invalidUrl
         }
 
@@ -132,17 +140,46 @@ final class ThrottlingDecipher {
     // MARK: - Parsing
 
     private func extractNFunctionName(from js: String) throws -> String {
-        // Pattern used by yt-dlp/NewPipe to find the n-transform function
-        let pattern = #"\.get\("n"\)\)&&\(b=([A-Za-z0-9$]{2})\(b\)"#
-        let regex = try NSRegularExpression(pattern: pattern, options: [])
-        let range = NSRange(js.startIndex..<js.endIndex, in: js)
+        // Multiple patterns used by yt-dlp/NewPipe (updated 2025-2026)
+        let patterns = [
+            #"\.get\("n"\)\)&&\(b=([A-Za-z0-9$_]{1,10})\(b\)"#,
+            #"a\.set\("n",b\)\|\|\(b=([A-Za-z0-9$_]{1,10})\(b\)"#,
+            #"\(b=([A-Za-z0-9$_]{1,10})\(b\)\.set\("n",b\)"#,
+            #"b=([A-Za-z0-9$_]{1,10})\(b\).*?\.set\("n",b\)"#,
+            #"([A-Za-z0-9$_]{1,10})\.set\("n",([A-Za-z0-9$_]{1,10})\)"#,
+            #"([A-Za-z0-9$_]+)\[\"n\"\]&&\(b=([A-Za-z0-9$_]+)\(b\)"#
+        ]
 
-        guard let match = regex.firstMatch(in: js, options: [], range: range),
-              let nameRange = Range(match.range(at: 1), in: js) else {
-            throw ThrottlingError.nFunctionNotFound
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+               let match = regex.firstMatch(in: js, options: [], range: NSRange(js.startIndex..<js.endIndex, in: js)) {
+                // Find the capture group that looks like function name (prefer last group with $ or alphanumeric)
+                for i in (1..<match.numberOfRanges).reversed() {
+                    let r = match.range(at: i)
+                    if r.location != NSNotFound, let swiftRange = Range(r, in: js) {
+                        let candidate = String(js[swiftRange])
+                        if candidate.count >= 1 && candidate.count <= 10 {
+                            return candidate
+                        }
+                    }
+                }
+            }
         }
 
-        return String(js[nameRange])
+        // Fallback: search for common n-function definition patterns
+        let fallbackPatterns = [
+            #"var\s+([A-Za-z0-9$_]+)\s*=\s*\[([^\]]+)\].*?\.get\("n"\)"#,
+            #"function\s+([A-Za-z0-9$_]+)\s*\(\s*[A-Za-z0-9$_]+\s*\)\s*\{[^}]*\.push\([^}]*\.splice"#
+        ]
+        for pattern in fallbackPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+               let match = regex.firstMatch(in: js, options: [], range: NSRange(js.startIndex..<js.endIndex, in: js)),
+               let r = Range(match.range(at: 1), in: js) {
+                return String(js[r])
+            }
+        }
+
+        throw ThrottlingError.nFunctionNotFound
     }
 
     // MARK: - Helpers

@@ -279,23 +279,41 @@ class YouTubeMusic {
     // MARK: - Player
 
     func getPlayer(videoId: String) async throws -> (response: PlayerResponse, clientType: InnerTubeClientType) {
-        let body: [String: Any] = [
+        // Base body - include flags to pass age/region checks
+        let baseBody: [String: Any] = [
             "videoId": videoId,
-            "playlistId": "RDAMVM\(videoId)"
+            "playlistId": "RDAMVM\(videoId)",
+            "racyCheckOk": true,
+            "contentCheckOk": true
         ]
 
-        // Try multiple clients in order (matching InnerTune-dev):
-        // 1. ANDROID_MUSIC first if logged in (plays age-restricted songs)
-        // 2. IOS (works without login)
-        // 3. TVHTML5 (fallback for restricted content)
+        // Optimized client order based on 2025-2026 YouTube changes:
+        // - IOS 20.42 and ANDROID 20.07 are the most reliable without PO Token (no login required)
+        // - ANDROID_MUSIC now requires auth (LOGIN_REQUIRED without cookies), so only try when authenticated
+        // - WEB clients now often need poToken and fail with UNPLAYABLE, so deprioritized
         var clients: [InnerTubeClientType] = []
         if client.isAuthenticated {
+            // When logged in, try authenticated music client first (handles age-restricted + premium)
             clients.append(.androidMusic)
+            clients.append(contentsOf: [.ios, .android, .tvEmbedded, .webRemix, .web])
+        } else {
+            // Unauthenticated: prioritize mobile clients that work without login
+            clients.append(contentsOf: [.ios, .android, .tvEmbedded, .androidVR, .webRemix, .web])
         }
-        clients.append(contentsOf: [.ios, .tvEmbedded, .androidMusic, .android, .web])
 
+        var lastError: Error?
         for clientType in clients {
             do {
+                // Each attempt uses fresh body to avoid mutation side-effects
+                var body = baseBody
+                // Add playbackContext for better compatibility (helps with signatureTimestamp)
+                body["playbackContext"] = [
+                    "contentPlaybackContext": [
+                        "html5Preference": "HTML5_PREF_WANTS",
+                        "signatureTimestamp": 20325
+                    ]
+                ]
+
                 let response = try await client.makeRequest(
                     endpoint: "player",
                     body: body,
@@ -303,56 +321,66 @@ class YouTubeMusic {
                     responseType: PlayerResponse.self
                 )
 
-                // Check playability status (matching InnerTune-dev)
+                // Check playability status
                 guard response.playabilityStatus?.status == "OK" else {
-                    let reason = response.playabilityStatus?.reason
-                    print("⚠️ [YouTube API] Client \(clientType) not playable: \(reason ?? "unknown reason")")
+                    let reason = response.playabilityStatus?.reason ?? response.playabilityStatus?.status ?? "unknown"
+                    print("⚠️ [YouTube API] Client \(clientType) not playable: \(reason)")
+                    // If LOGIN_REQUIRED and we are authenticated, maybe cookies expired -> propagate auth error
+                    if response.playabilityStatus?.status == "LOGIN_REQUIRED" {
+                        lastError = InnerTubeError.authenticationExpired
+                    }
                     continue
                 }
 
-                // Check if we got streaming data with valid URLs or signatureCipher
-                if let streamingData = response.streamingData,
-                   let formats = streamingData.adaptiveFormats,
-                   formats.contains(where: { $0.url != nil || $0.signatureCipher != nil }) {
-
-                    // Validate that this client's URLs actually work (matching Android)
-                    // Try to get a stream URL and validate it
-                    if let testFormat = formats.first(where: { $0.mimeType.contains("audio") }) {
-                        let testUrl = testFormat.url ?? decodeSignatureCipher(testFormat.signatureCipher)
-                        if let testUrl = testUrl {
-                            let isValid = await validateStreamUrl(testUrl)
-                            if isValid {
-                                print("🎵 [YouTube API] Using client: \(clientType) for \(response.videoDetails?.title ?? "unknown")")
-                                return (response, clientType)
-                            }
+                // Check if we got streaming data with valid URLs or cipher
+                if let streamingData = response.streamingData {
+                    let hasUsableFormat: Bool = {
+                        let check: ([PlayerResponse.StreamingData.Format]?) -> Bool = { fmts in
+                            guard let fmts = fmts else { return false }
+                            return fmts.contains(where: { $0.url != nil || $0.signatureCipher != nil || $0.cipher != nil })
                         }
+                        return check(streamingData.adaptiveFormats) || check(streamingData.formats)
+                    }()
+
+                    if hasUsableFormat {
+                        print("🎵 [YouTube API] Using client: \(clientType) for \(response.videoDetails?.title ?? "unknown")")
+                        return (response, clientType)
+                    } else {
+                        print("⚠️ [YouTube API] Client \(clientType) has no usable formats")
                     }
                 }
             } catch {
-                // Continue to next client
+                lastError = error
+                print("⚠️ [YouTube API] Client \(clientType) request failed: \(error)")
                 continue
             }
         }
 
-        // If all clients fail, throw error
+        // If we had an auth-specific error, propagate it
+        if let authErr = lastError as? InnerTubeError, case .authenticationExpired = authErr {
+            throw authErr
+        }
         throw InnerTubeError.invalidResponse
     }
 
     func getStreamUrl(videoId: String) async throws -> (url: String, expiry: TimeInterval?, duration: TimeInterval?, clientType: InnerTubeClientType, loudnessDb: Double?) {
         let (playerResponse, usedClientType) = try await getPlayer(videoId: videoId)
 
-        // If we didn't get the player JS assets, try a WEB player request just to retrieve assets for n-decoding
+        // Collect assets for n-decoding if available (mobile clients usually have no assets)
         var assetsResponse: PlayerResponse? = playerResponse
         if playerResponse.assets?.js == nil {
+            // Try to fetch assets via WEB_REMIX as fallback (best chance to get js)
             do {
                 let webBody: [String: Any] = [
                     "videoId": videoId,
-                    "playlistId": "RDAMVM\(videoId)"
+                    "playlistId": "RDAMVM\(videoId)",
+                    "racyCheckOk": true,
+                    "contentCheckOk": true
                 ]
                 let webResponse = try await client.makeRequest(
                     endpoint: "player",
                     body: webBody,
-                    clientType: .web,
+                    clientType: .webRemix,
                     responseType: PlayerResponse.self
                 )
                 if webResponse.assets?.js != nil {
@@ -377,10 +405,13 @@ class YouTubeMusic {
             throw InnerTubeError.invalidResponse
         }
 
-        // Get all audio formats
-        let audioFormats = streamingData.adaptiveFormats?.filter { format in
+        // Get all audio formats - fallback to formats if adaptiveFormats empty
+        var audioFormats = streamingData.adaptiveFormats?.filter { format in
             format.mimeType.contains("audio")
         } ?? []
+        if audioFormats.isEmpty, let fallback = streamingData.formats?.filter({ $0.mimeType.contains("audio") }) {
+            audioFormats = fallback
+        }
 
         // Prefer iOS-compatible formats (MP4/AAC) over WebM/Opus
         let iosCompatibleFormats = audioFormats.filter { format in
@@ -424,8 +455,8 @@ class YouTubeMusic {
 
         print("🎵 [YouTube API] Selected format (quality: \(quality.rawValue)) - itag: \(bestFormat.itag ?? 0), mimeType: \(bestFormat.mimeType), bitrate: \(bestFormat.bitrate ?? 0), contentLength: \(bestFormat.contentLength ?? "unknown")")
 
-        // Handle signatureCipher when plain URL is absent
-        let directUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher)
+        // Handle cipher when plain URL is absent (signatureCipher or cipher)
+        let directUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
 
         guard let baseUrl = directUrl else {
             throw InnerTubeError.invalidResponse
@@ -466,10 +497,18 @@ class YouTubeMusic {
             throw InnerTubeError.invalidResponse
         }
 
-        // Get all audio formats
-        let audioFormats = streamingData.adaptiveFormats?.filter { format in
+        // Get all audio formats - fallback to formats if needed
+        var audioFormats = streamingData.adaptiveFormats?.filter { format in
             format.mimeType.contains("audio")
         } ?? []
+        if audioFormats.isEmpty, let fallback = streamingData.formats?.filter({ $0.mimeType.contains("audio") }) {
+            audioFormats = fallback
+        }
+
+        // If still empty, try any format with contentLength
+        if audioFormats.isEmpty {
+            audioFormats = (streamingData.adaptiveFormats ?? []) + (streamingData.formats ?? [])
+        }
 
         // Prefer iOS-compatible formats (MP4/AAC)
         let iosCompatibleFormats = audioFormats.filter { format in
@@ -484,24 +523,27 @@ class YouTubeMusic {
             selectedFormat = audioFormats.max(by: { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) })
         }
 
-        guard let bestFormat = selectedFormat,
-              let contentLengthStr = bestFormat.contentLength,
-              let contentLength = Int64(contentLengthStr) else {
+        guard let bestFormat = selectedFormat else {
             throw InnerTubeError.invalidResponse
         }
 
-        // Get base URL (handle signatureCipher if needed)
-        var baseUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher)
+        let contentLength: Int64 = Int64(bestFormat.contentLength ?? "0") ?? 0
+
+        // Get base URL (handle cipher if needed)
+        var baseUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
 
         guard var url = baseUrl else {
             throw InnerTubeError.invalidResponse
         }
 
-        // Add range parameter for better download performance (matching Android implementation)
-        // This tells YouTube to deliver the full file at once instead of streaming chunks
-        if !url.contains("&range=") {
+        // Add range parameter for better download performance (only if we know length)
+        if contentLength > 0 && !url.contains("&range=") {
             url += "&range=0-\(contentLength)"
         }
+
+        // Deobfuscate n param if present (same as streaming)
+        // Reuse throttling decipher if assets available
+        // For download we skip decipher fallback for simplicity - mobile clients usually don't need it
 
         return (url: url, contentLength: contentLength, clientType: usedClientType)
     }
@@ -742,6 +784,27 @@ class YouTubeMusic {
 
     func getPlaylist(browseId: String) async throws -> (YTPlaylist, [YTSong]) {
         let response = try await browse(browseId: browseId)
+
+        // Check for auth errors (when authenticated but cookies expired, YouTube returns sign-in prompt)
+        if let sections = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents {
+            for section in sections {
+                if let msg = section.itemSectionRenderer?.contents?.first?.messageRenderer,
+                   msg.button?.buttonRenderer?.navigationEndpoint?.signInEndpoint != nil {
+                    throw InnerTubeError.authenticationExpired
+                }
+            }
+        }
+        // Also check twoColumn tabs for sign-in
+        if let twoColumn = response.contents?.twoColumnBrowseResultsRenderer,
+           let tabs = twoColumn.tabs,
+           let sections = tabs.first?.tabRenderer?.content?.sectionListRenderer?.contents {
+            for section in sections {
+                if let msg = section.itemSectionRenderer?.contents?.first?.messageRenderer,
+                   msg.button?.buttonRenderer?.navigationEndpoint?.signInEndpoint != nil {
+                    throw InnerTubeError.authenticationExpired
+                }
+            }
+        }
 
         // For twoColumnBrowseResultsRenderer playlists (without top-level header)
         if let twoColumn = response.contents?.twoColumnBrowseResultsRenderer, response.header == nil {

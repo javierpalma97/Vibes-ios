@@ -253,6 +253,7 @@ struct PlayerResponse: Codable {
             let audioChannels: Int?
             let loudnessDb: Double?
             let signatureCipher: String?
+            let cipher: String?
         }
     }
 

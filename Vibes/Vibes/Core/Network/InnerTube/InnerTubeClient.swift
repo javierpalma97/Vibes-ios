@@ -161,16 +161,7 @@ class InnerTubeClient {
     // MARK: - Request Building
 
     private func buildContext(clientType: InnerTubeClientType = .webRemix, videoId: String? = nil) -> InnerTubeContext {
-        let (clientName, clientVersion, userAgent) = getClientInfo(for: clientType)
-
-        // Determine which clients support login (matching Android)
-        let loginSupported: Bool
-        switch clientType {
-        case .webRemix, .webCreator, .tvEmbedded:
-            loginSupported = true
-        case .ios, .android, .androidMusic, .androidVR, .web:
-            loginSupported = false
-        }
+        let (clientName, clientVersion, _) = getClientInfo(for: clientType)
 
         // Determine device/OS fields based on client type
         var deviceMake: String? = nil
@@ -184,19 +175,19 @@ class InnerTubeClient {
             deviceMake = "Apple"
             deviceModel = "iPhone16,2"  // iPhone 15 Pro
             osName = "iOS"
-            osVersion = "17.5.1.21F90"
+            osVersion = "18.1.0.22B83"
         case .android, .androidMusic:
             deviceMake = "Google"
             deviceModel = "Pixel 8"
             osName = "Android"
-            osVersion = "13"
-            androidSdkVersion = "33"
+            osVersion = "14"
+            androidSdkVersion = "34"
         case .androidVR:
             deviceMake = "Oculus"
             deviceModel = "Quest 3"
             osName = "Android"
-            osVersion = "12"
-            androidSdkVersion = "32"
+            osVersion = "14"
+            androidSdkVersion = "34"
         default:
             break
         }
@@ -227,7 +218,7 @@ class InnerTubeClient {
             ),
             user: InnerTubeContext.UserInfo(
                 lockedSafetyMode: false,
-                onBehalfOfUser: (isAuthenticated && loginSupported) ? dataSyncId : nil  // Only send dataSyncId if client supports login
+                onBehalfOfUser: isAuthenticated ? dataSyncId : nil
             )
         )
     }
@@ -235,21 +226,21 @@ class InnerTubeClient {
     private func getClientInfo(for clientType: InnerTubeClientType) -> (String, String, String?) {
         switch clientType {
         case .webRemix:
-            return ("WEB_REMIX", "1.20220606.03.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
+            return ("WEB_REMIX", "1.20250224.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         case .web:
-            return ("WEB", "2.2021111", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
+            return ("WEB", "2.20250222.10.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         case .tvEmbedded:
-            return ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", "Mozilla/5.0 (PlayStation 4 5.55) AppleWebKit/601.2 (KHTML, like Gecko)")
+            return ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", "Mozilla/5.0 (PlayStation 5 12.02) AppleWebKit/605.1.15 (KHTML, like Gecko)")
         case .webCreator:
-            return ("WEB_CREATOR", "1.20220606.03.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
+            return ("WEB_CREATOR", "1.20250224.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         case .ios:
-            return ("IOS", "19.29.1", "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)")
+            return ("IOS", "20.42.02", "com.google.ios.youtube/20.42.02 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X; en_US)")
         case .android:
-            return ("ANDROID", "17.13.3", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36")
+            return ("ANDROID", "20.07.39", "com.google.android.youtube/20.07.39 (Linux; U; Android 14; Pixel 8 Build/UP1A.231005.007) gzip")
         case .androidMusic:
-            return ("ANDROID_MUSIC", "5.01", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36")
+            return ("ANDROID_MUSIC", "8.23.33", "com.google.android.apps.youtube.music/8.23.33 (Linux; U; Android 14; Pixel 8 Build/UP1A.231005.007) gzip")
         case .androidVR:
-            return ("ANDROID_VR", "1.43.32", "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)")
+            return ("ANDROID_VR", "1.57.08", "com.google.android.apps.youtube.vr.oculus/1.57.08 (Linux; U; Android 14; Quest 3; Build/UKQ1.231005.007; Cronet/118.0.5993.111)")
         }
     }
 
@@ -275,22 +266,16 @@ class InnerTubeClient {
         request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+        if let vd = visitorData ?? defaultVisitorData as String? {
+            request.setValue(vd, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        }
 
         // CRITICAL: User-Agent header
         // URLSession may override this, so we also need to configure URLSessionConfiguration
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
-        // Determine if client supports login (matching Android logic)
-        let loginSupported: Bool
-        switch clientType {
-        case .webRemix, .webCreator, .tvEmbedded:
-            loginSupported = true
-        case .ios, .android, .androidMusic, .androidVR, .web:
-            loginSupported = false
-        }
-
-        // Only send cookies if client supports login (matching Android ytClient logic)
-        if let cookies = cookies, loginSupported {
+        // Send cookies for authenticated requests (all clients now support auth for robustness)
+        if let cookies = cookies {
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
 
             // Add SAPISIDHASH for authenticated requests
@@ -314,20 +299,24 @@ class InnerTubeClient {
     }
 
     private func generateSAPISIDHASH() -> String? {
-        // Matching Android implementation exactly
         guard cookies != nil else {
             return nil
         }
 
-        // Check if SAPISID exists in cookieMap (matching Android line 107)
-        guard let sapisid = cookieMap["SAPISID"] else {
+        // Try SAPISID first, then __Secure-3PAPISID (modern YouTube uses Secure prefix)
+        let sapisid = cookieMap["SAPISID"]
+            ?? cookieMap["__Secure-3PAPISID"]
+            ?? cookieMap["__Secure-3PSID"]
+            ?? cookieMap["APISID"]
+            ?? cookieMap["__Secure-1PAPISID"]
+
+        guard let sid = sapisid else {
             return nil
         }
 
-        // Generate hash (matching Android lines 108-110)
         let currentTime = Int(Date().timeIntervalSince1970)
         let origin = "https://music.youtube.com"
-        let hashInput = "\(currentTime) \(sapisid) \(origin)"
+        let hashInput = "\(currentTime) \(sid) \(origin)"
 
         guard let data = hashInput.data(using: .utf8) else { return nil }
         let hash = SHA1.hash(data: data)
@@ -355,6 +344,10 @@ class InnerTubeClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            // Map 401/403 to authenticationExpired when logged in (session expired)
+            if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && isAuthenticated {
+                throw InnerTubeError.authenticationExpired
+            }
             throw InnerTubeError.httpError(statusCode: httpResponse.statusCode)
         }
 
