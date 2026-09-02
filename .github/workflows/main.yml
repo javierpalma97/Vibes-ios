@@ -10,12 +10,6 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v4
 
-      - name: Parchear error del código original
-        run: |
-          # El autor olvidó el archivo DownloadsView. Lo reemplazamos por EmptyView para que Xcode no falle.
-          find . -name "LibraryView.swift" -exec sed -i '' 's/DownloadsView()/EmptyView()/g' {} +
-          echo "Parche aplicado al código fuente."
-
       - name: Instalar dependencias (CocoaPods si existe)
         run: |
           PODFILE=$(find . -name "Podfile" | head -n 1)
@@ -42,7 +36,6 @@ jobs:
             PROJECT_FILE=$(basename "$WORKSPACE")
             SCHEME_NAME=$(xcodebuild -workspace "$PROJECT_FILE" -list | awk '/Schemes:/{getline; print $0}' | xargs)
             
-            # Se ha eliminado el comando 'clean' para evitar el error de permisos
             xcodebuild build -workspace "$PROJECT_FILE" -scheme "$SCHEME_NAME" \
               -configuration Release \
               -sdk iphoneos \
@@ -58,7 +51,6 @@ jobs:
             PROJECT_FILE=$(basename "$PROJECT")
             SCHEME_NAME=$(xcodebuild -project "$PROJECT_FILE" -list | awk '/Schemes:/{getline; print $0}' | xargs)
             
-            # Se ha eliminado el comando 'clean' para evitar el error de permisos
             xcodebuild build -project "$PROJECT_FILE" -scheme "$SCHEME_NAME" \
               -configuration Release \
               -sdk iphoneos \
