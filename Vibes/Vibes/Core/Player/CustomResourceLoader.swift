@@ -47,45 +47,130 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     private func handleLoadingRequest(_ loadingRequest: AVAssetResourceLoadingRequest, url: URL) async {
         do {
-            var request = URLRequest(url: url)
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            request.setValue("*/*", forHTTPHeaderField: "Accept")
-
             // Handle byte range request – cap to avoid YouTube 403 on huge ranges (>400KB for IOS)
             // Tests: ANDROID 139 200KB sequential full OK, 256KB IOS fails at 256k, 500KB fails. 200KB is safest.
             let maxChunk: Int64 = 200_000
+            var requestedOffset: Int64 = 0
+            var requestedLength: Int = 0
+            var isProbe = false
             if let dataRequest = loadingRequest.dataRequest {
-                var requestedOffset = dataRequest.requestedOffset
-                var requestedLength = dataRequest.requestedLength
+                requestedOffset = dataRequest.requestedOffset
+                requestedLength = dataRequest.requestedLength
 
                 // If this is a tiny probe (2 bytes), request a larger chunk instead
                 if requestedLength == 2 && requestedOffset == 0 {
                     print("🔄 [ResourceLoader] Tiny probe detected, requesting 32KB instead")
                     requestedLength = 32768  // 32KB
-                }
-
-                // Cap huge/open-ended requests (AVPlayer may request entire file)
-                if requestedLength <= 0 || requestedLength >= Int.max - 1 || requestedLength > maxChunk {
-                    let original = requestedLength
-                    requestedLength = Int(maxChunk)
-                    print("🔄 [ResourceLoader] Capping huge request \(original) to \(requestedLength) bytes for YouTube throttling")
-                }
-
-                // Always add Range header with capped length
-                if requestedLength > 0 {
-                    let rangeEnd = requestedOffset + Int64(requestedLength) - 1
-                    request.setValue("bytes=\(requestedOffset)-\(rangeEnd)", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Requesting range: bytes=\(requestedOffset)-\(rangeEnd) (capped from \(dataRequest.requestedLength))")
-                } else {
-                    request.setValue("bytes=\(requestedOffset)-", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Requesting range: bytes=\(requestedOffset)-")
+                    isProbe = true
                 }
             }
 
-            print("🔄 [ResourceLoader] Making request with default headers")
-            print("🔄 [ResourceLoader] URL host: \(url.host ?? "unknown")")
+            // Determine if this is a huge request (entire file) – we must fetch it chunked
+            let needsChunkedFetch = requestedLength <= 0 || requestedLength >= Int.max - 1 || Int64(requestedLength) > maxChunk * 2
+            var combinedData = Data()
+            var httpResponse: HTTPURLResponse?
+            var totalLengthFromServer: Int64 = 0
+            var mimeType: String?
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            if needsChunkedFetch && !isProbe {
+                // Fetch the huge range in 200KB chunks and combine (avoids 403 on 3M single Range)
+                let originalLength = requestedLength
+                let totalRequested = Int64(requestedLength)
+                print("🔄 [ResourceLoader] Huge request \(originalLength) detected, fetching chunked 200KB")
+                await MainActor.run { DebugLogger.shared.log("🔄 huge \(requestedOffset)-\(totalRequested) chunked") }
+                var offset = requestedOffset
+                var remaining = totalRequested
+                // Cap total fetch to avoid infinite loop if AVPlayer requests Int.max
+                let maxTotalFetch: Int64 = 4_000_000 // 4MB max for audio
+                if remaining > maxTotalFetch || remaining <= 0 {
+                    remaining = maxTotalFetch
+                }
+                while remaining > 0 {
+                    let chunkEnd = min(offset + maxChunk - 1, requestedOffset + totalRequested - 1)
+                    var chunkRequest = URLRequest(url: url)
+                    chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                    chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                    chunkRequest.setValue("bytes=\(offset)-\(chunkEnd)", forHTTPHeaderField: "Range")
+                    print("🔄 [ResourceLoader] Chunk fetch bytes=\(offset)-\(chunkEnd)")
+                    let (chunkData, chunkResponse) = try await URLSession.shared.data(for: chunkRequest)
+                    guard let chunkHttp = chunkResponse as? HTTPURLResponse, (200...299).contains(chunkHttp.statusCode) || chunkHttp.statusCode == 206 else {
+                        let code = (chunkResponse as? HTTPURLResponse)?.statusCode ?? -1
+                        print("❌ [ResourceLoader] Chunk HTTP \(code)")
+                        throw NSError(domain: "CustomResourceLoader", code: code)
+                    }
+                    if httpResponse == nil { httpResponse = chunkHttp as HTTPURLResponse }
+                    if mimeType == nil { mimeType = chunkHttp.mimeType }
+                    if totalLengthFromServer == 0, let cr = chunkHttp.value(forHTTPHeaderField: "Content-Range") {
+                        let parts = cr.components(separatedBy: "/")
+                        if parts.count == 2, let total = Int64(parts[1]) { totalLengthFromServer = total }
+                    }
+                    combinedData.append(chunkData)
+                    let fetched = Int64(chunkData.count)
+                    offset += fetched
+                    remaining -= fetched
+                    if fetched < maxChunk { break } // EOF
+                    if combinedData.count >= totalRequested { break }
+                }
+                print("✅ [ResourceLoader] Chunked fetch done \(combinedData.count) bytes")
+                await MainActor.run { DebugLogger.shared.log("✅ chunked \(combinedData.count) total=\(totalLengthFromServer)") }
+                // Fall through to contentInfo and dataResponse handling with combinedData
+                // We need to synthesize a HTTPURLResponse for later contentInfo
+                // For now, use the last chunk's httpResponse
+            } else {
+                // Small probe or capped chunk – single request
+                var request = URLRequest(url: url)
+                request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                request.setValue("*/*", forHTTPHeaderField: "Accept")
+                var fetchOffset = requestedOffset
+                var fetchLength = requestedLength
+                if !isProbe && fetchLength > maxChunk {
+                    fetchLength = Int(maxChunk)
+                }
+                if fetchLength > 0 {
+                    let rangeEnd = fetchOffset + Int64(fetchLength) - 1
+                    request.setValue("bytes=\(fetchOffset)-\(rangeEnd)", forHTTPHeaderField: "Range")
+                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)-\(rangeEnd) (orig \(loadingRequest.dataRequest?.requestedLength ?? 0))")
+                } else {
+                    request.setValue("bytes=\(fetchOffset)-", forHTTPHeaderField: "Range")
+                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)-")
+                }
+                print("🔄 [ResourceLoader] Making request with default headers")
+                print("🔄 [ResourceLoader] URL host: \(url.host ?? "unknown")")
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+                combinedData = data
+                httpResponse = response as? HTTPURLResponse
+                mimeType = httpResponse?.mimeType
+                if let cr = httpResponse?.value(forHTTPHeaderField: "Content-Range") {
+                    let parts = cr.components(separatedBy: "/")
+                    if parts.count == 2, let total = Int64(parts[1]) { totalLengthFromServer = total }
+                }
+                print("✅ [ResourceLoader] Got response: \(httpResponse?.statusCode ?? -1)")
+                print("✅ [ResourceLoader] Content-Length: \(httpResponse?.value(forHTTPHeaderField: "Content-Length") ?? "unknown")")
+                await MainActor.run { DebugLogger.shared.log("✅ loader HTTP \(httpResponse?.statusCode ?? -1) len=\(httpResponse?.value(forHTTPHeaderField: "Content-Length") ?? "?")") }
+            }
+
+            guard let httpResponseUnwrapped = httpResponse else {
+                print("❌ [ResourceLoader] Not an HTTP response")
+                loadingRequest.finishLoading(with: NSError(domain: "CustomResourceLoader", code: -1))
+                return
+            }
+
+            print("✅ [ResourceLoader] Got response: \(httpResponseUnwrapped.statusCode)")
+            print("✅ [ResourceLoader] Content-Length: \(httpResponseUnwrapped.value(forHTTPHeaderField: "Content-Length") ?? "unknown")")
+            print("✅ [ResourceLoader] Content-Type: \(httpResponseUnwrapped.value(forHTTPHeaderField: "Content-Type") ?? "unknown")")
+            await MainActor.run { DebugLogger.shared.log("✅ loader HTTP \(httpResponseUnwrapped.statusCode) len=\(httpResponseUnwrapped.value(forHTTPHeaderField: "Content-Length") ?? "?")") }
+
+            guard (200...299).contains(httpResponseUnwrapped.statusCode) || httpResponseUnwrapped.statusCode == 206 else {
+                print("❌ [ResourceLoader] HTTP error: \(httpResponseUnwrapped.statusCode)")
+                await MainActor.run { DebugLogger.shared.log("❌ loader HTTP \(httpResponseUnwrapped.statusCode) url=\(url.absoluteString.prefix(80))") }
+                loadingRequest.finishLoading(with: NSError(domain: "CustomResourceLoader", code: httpResponseUnwrapped.statusCode))
+                return
+            }
+
+            // Use combinedData and httpResponseUnwrapped from here on
+            let data = combinedData
+            let httpResponse = httpResponseUnwrapped
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 print("❌ [ResourceLoader] Not an HTTP response")
@@ -107,10 +192,18 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
             // Fill in content information – prioritize Content-Range total over Content-Length (chunk size)
             if let contentInfoRequest = loadingRequest.contentInformationRequest {
-                let mimeType = httpResponse.mimeType
-                if let mimeType = mimeType {
-                    contentInfoRequest.contentType = mimeType
+                // Use proper UTI for AVFoundation, not raw mimeType with codecs
+                // googlevideo returns audio/mp4 but AVFoundation expects public.mpeg-4-audio / com.apple.quicktime-movie
+                let uti: String
+                if let mime = httpResponse.mimeType, mime.contains("audio") {
+                    uti = "public.mpeg-4-audio"
+                } else if let mime = httpResponse.mimeType, mime.contains("video") {
+                    uti = "public.mpeg-4"
+                } else {
+                    uti = httpResponse.mimeType ?? "public.mpeg-4"
                 }
+                contentInfoRequest.contentType = uti
+                await MainActor.run { DebugLogger.shared.log("📄 contentType UTI=\(uti) mime=\(httpResponse.mimeType ?? "?")") }
 
                 // Get total content length – MUST use Content-Range for 206 responses
                 var contentLength: Int64 = 0
