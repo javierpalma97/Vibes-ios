@@ -1,0 +1,51 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch: # Permite ejecutar la compilación manualmente con un botón
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias de CocoaPods (si existen)
+        run: |
+          if [ -f "Podfile" ]; then
+            sudo gem install cocoapods
+            pod install
+          fi
+
+      - name: Compilar el proyecto sin firmar
+        run: |
+          # Detectar si usa Workspace (CocoaPods) o Project estándar
+          if ls *.xcworkspace 1> /dev/null 2>&1; then
+            PROJECT_ARG="-workspace $(ls *.xcworkspace | head -n 1)"
+            SCHEME_ARG="-scheme $(xcodebuild -workspace $(ls *.xcworkspace | head -n 1) -list | awk '/Schemes:/{getline; print $1}')"
+          else
+            PROJECT_ARG="-project $(ls *.xcodeproj | head -n 1)"
+            SCHEME_ARG="-scheme $(xcodebuild -project $(ls *.xcodeproj | head -n 1) -list | awk '/Schemes:/{getline; print $1}')"
+          fi
+
+          # Ejecutar la compilación
+          xcodebuild clean build $PROJECT_ARG $SCHEME_ARG \
+            -configuration Release \
+            -sdk iphoneos \
+            -arch arm64 \
+            CONFIGURATION_BUILD_DIR=$(pwd)/build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Empaquetar como archivo .IPA
+        run: |
+          mkdir -p Payload
+          mv build/*.app Payload/
+          zip -r Vibes-unsigned.ipa Payload
+
+      - name: Subir IPA para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibes-Unsigned-IPA
+          path: Vibes-unsigned.ipa
