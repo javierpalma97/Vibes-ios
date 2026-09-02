@@ -216,6 +216,8 @@ class PlayerManager: NSObject, ObservableObject {
     // MARK: - Playback Control
 
     func playSong(_ song: Song) async {
+        let dbg = DebugLogger.shared
+        await MainActor.run { dbg.log("▶️ playSong: \(song.title) id=\(song.id)") }
         print("🎵 [Player] Starting to play: \(song.title)")
         hasTriggeredEndForCurrentItem = false
         self.currentSong = song
@@ -260,17 +262,20 @@ class PlayerManager: NSObject, ObservableObject {
                 }
             } else {
                 print("🎵 [Player] Playing STREAMED file for \(song.title)")
+                await MainActor.run { DebugLogger.shared.log("🌐 fetching streamUrl for \(song.id) client=\(InnerTubeClient.shared.isAuthenticated ? "auth" : "noauth")") }
                 // Get stream URL from network
                 let (streamUrl, duration, clientType, loudness) = try await getStreamUrl(for: song.id)
                 youtubeDuration = duration
                 youtubeLoudness = loudness
                 print("🎵 [Player] Got YouTube API duration: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
                 print("🎵 [Player] Stream URL: \(streamUrl.prefix(120))...")
+                await MainActor.run { DebugLogger.shared.log("✅ streamUrl OK client=\(clientType) dur=\(duration ?? -1) url=\(streamUrl.prefix(80))") }
 
                 // Use CustomResourceLoader via custom scheme to handle YouTube's range/throttling correctly
                 // Direct AVPlayerItem(url:) fails with 403 for googlevideo when using full-range or missing rn/rbuf
                 let customUrlString = streamUrl.replacingOccurrences(of: "https://", with: "customscheme://")
                 guard let customURL = URL(string: customUrlString) else {
+                    await MainActor.run { DebugLogger.shared.log("❌ invalid custom URL") }
                     self.playerState = .error(PlayerError.invalidUrl)
                     return
                 }
@@ -280,6 +285,7 @@ class PlayerManager: NSObject, ObservableObject {
                 self.resourceLoader = loader
                 newPlayerItem = AVPlayerItem(asset: asset)
                 url = URL(string: streamUrl)! // keep for logging
+                await MainActor.run { DebugLogger.shared.log("🔄 AVAsset customScheme \(clientType) loader=\(loader)") }
             }
 
             // Remove old observers
@@ -348,6 +354,7 @@ class PlayerManager: NSObject, ObservableObject {
 
         } catch {
             print("❌ [Player] Error playing song: \(error)")
+            await MainActor.run { DebugLogger.shared.log("❌ playSong error \(error) id=\(song.id)") }
 
             // If we get a 404, the videoId might be invalid - delete the song from DB so it can be re-fetched
             if case InnerTubeError.httpError(let statusCode) = error, statusCode == 404 {
@@ -487,7 +494,12 @@ class PlayerManager: NSObject, ObservableObject {
         case .failed:
             if let error = item.error {
                 print("❌ [Player] Error: \(error.localizedDescription)")
+                Task { await MainActor.run { DebugLogger.shared.log("❌ AVItem failed \(error.localizedDescription) id=\(self.currentSong?.id ?? "?")") } }
                 playerState = .error(error)
+                // Fallback: try direct URL without custom loader (por si el loader es el problema en este dispositivo)
+                if let song = self.currentSong, let urlStr = item.asset.description as String? {
+                    Task { await MainActor.run { DebugLogger.shared.log("↩️ fallback directo no implementado, revisa DebugLog") } }
+                }
             }
         case .unknown:
             break

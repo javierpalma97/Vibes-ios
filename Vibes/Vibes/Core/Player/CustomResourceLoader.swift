@@ -13,6 +13,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             print("❌ [ResourceLoader] No URL in request")
+            Task { await MainActor.run { DebugLogger.shared.log("❌ loader no url") } }
             return false
         }
 
@@ -29,6 +30,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
         print("🔄 [ResourceLoader] Loading resource: \(actualURL.host ?? "unknown")")
         print("🔄 [ResourceLoader] Byte range: \(loadingRequest.dataRequest?.requestedOffset ?? 0) - \(loadingRequest.dataRequest?.requestedLength ?? 0)")
+        Task { await MainActor.run { DebugLogger.shared.log("🔄 loader \(actualURL.host ?? "?") range \(loadingRequest.dataRequest?.requestedOffset ?? 0)-\(loadingRequest.dataRequest?.requestedLength ?? 0)") } }
 
         // Handle the request asynchronously
         Task {
@@ -94,9 +96,11 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             print("✅ [ResourceLoader] Got response: \(httpResponse.statusCode)")
             print("✅ [ResourceLoader] Content-Length: \(httpResponse.value(forHTTPHeaderField: "Content-Length") ?? "unknown")")
             print("✅ [ResourceLoader] Content-Type: \(httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown")")
+            await MainActor.run { DebugLogger.shared.log("✅ loader HTTP \(httpResponse.statusCode) len=\(httpResponse.value(forHTTPHeaderField: "Content-Length") ?? "?")") }
 
             guard (200...299).contains(httpResponse.statusCode) || httpResponse.statusCode == 206 else {
                 print("❌ [ResourceLoader] HTTP error: \(httpResponse.statusCode)")
+                await MainActor.run { DebugLogger.shared.log("❌ loader HTTP \(httpResponse.statusCode) url=\(url.absoluteString.prefix(80))") }
                 loadingRequest.finishLoading(with: NSError(domain: "CustomResourceLoader", code: httpResponse.statusCode))
                 return
             }
@@ -149,6 +153,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
         } catch {
             print("❌ [ResourceLoader] Error: \(error)")
+            await MainActor.run { DebugLogger.shared.log("❌ loader error \(error.localizedDescription)") }
             loadingRequest.finishLoading(with: error)
         }
     }

@@ -107,6 +107,13 @@ struct SettingsView: View {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
                 }
+
+                // Debug Section (sin necesidad de Mac/Console)
+                Section(header: Text("Debug")) {
+                    NavigationLink(destination: DebugLogView()) {
+                        Label("Ver logs de reproducción", systemImage: "doc.text.magnifyingglass")
+                    }
+                }
             }
             .navigationTitle("Settings")
         }
