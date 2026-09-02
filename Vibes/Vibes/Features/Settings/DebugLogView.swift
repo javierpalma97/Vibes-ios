@@ -38,13 +38,13 @@ struct DebugLogView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showShare) {
             if let data = logger.fullLog.data(using: .utf8) {
-                ShareSheet(items: [data])
+                DebugShareSheet(items: [data])
             }
         }
     }
 }
 
-struct ShareSheet: UIViewControllerRepresentable {
+struct DebugShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
