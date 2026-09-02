@@ -294,11 +294,12 @@ class YouTubeMusic {
         var clients: [InnerTubeClientType] = []
         if client.isAuthenticated {
             // When logged in, try authenticated music client first (handles age-restricted + premium)
+            // ANDROID is prioritized over IOS because IOS throttles after 400KB (see DownloadManager chunk tests)
             clients.append(.androidMusic)
-            clients.append(contentsOf: [.ios, .android, .tvEmbedded, .webRemix, .web])
+            clients.append(contentsOf: [.android, .ios, .tvEmbedded, .webRemix, .web])
         } else {
-            // Unauthenticated: prioritize mobile clients that work without login
-            clients.append(contentsOf: [.ios, .android, .tvEmbedded, .androidVR, .webRemix, .web])
+            // Unauthenticated: ANDROID allows full 1.7MB download with 200k chunks, IOS throttles after 400KB
+            clients.append(contentsOf: [.android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
         }
 
         var lastError: Error?
@@ -532,18 +533,13 @@ class YouTubeMusic {
         // Get base URL (handle cipher if needed)
         var baseUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
 
-        guard var url = baseUrl else {
+        guard let url = baseUrl else {
             throw InnerTubeError.invalidResponse
         }
 
-        // Add range parameter for better download performance (only if we know length)
-        if contentLength > 0 && !url.contains("&range=") {
-            url += "&range=0-\(contentLength)"
-        }
-
-        // Deobfuscate n param if present (same as streaming)
-        // Reuse throttling decipher if assets available
-        // For download we skip decipher fallback for simplicity - mobile clients usually don't need it
+        // Do NOT add &range query here – googlevideo now rejects full-range query (403)
+        // DownloadManager will fetch via Range header in chunks (see DownloadManager.performChunkedDownload)
+        // This keeps URL clean for both streaming (AVPlayer via CustomResourceLoader) and chunked download
 
         return (url: url, contentLength: contentLength, clientType: usedClientType)
     }

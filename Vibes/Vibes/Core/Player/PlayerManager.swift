@@ -261,19 +261,25 @@ class PlayerManager: NSObject, ObservableObject {
             } else {
                 print("🎵 [Player] Playing STREAMED file for \(song.title)")
                 // Get stream URL from network
-                let (streamUrl, duration, _, loudness) = try await getStreamUrl(for: song.id)
+                let (streamUrl, duration, clientType, loudness) = try await getStreamUrl(for: song.id)
                 youtubeDuration = duration
                 youtubeLoudness = loudness
                 print("🎵 [Player] Got YouTube API duration: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
+                print("🎵 [Player] Stream URL: \(streamUrl.prefix(120))...")
 
-                guard let remoteURL = URL(string: streamUrl) else {
+                // Use CustomResourceLoader via custom scheme to handle YouTube's range/throttling correctly
+                // Direct AVPlayerItem(url:) fails with 403 for googlevideo when using full-range or missing rn/rbuf
+                let customUrlString = streamUrl.replacingOccurrences(of: "https://", with: "customscheme://")
+                guard let customURL = URL(string: customUrlString) else {
                     self.playerState = .error(PlayerError.invalidUrl)
                     return
                 }
-                url = remoteURL
-
-                // Use URL directly - simple and clean like Android
-                newPlayerItem = AVPlayerItem(url: url)
+                let asset = AVURLAsset(url: customURL)
+                let loader = CustomResourceLoader(userAgent: InnerTubeClient.shared.getUserAgent(for: clientType))
+                asset.resourceLoader.setDelegate(loader, queue: DispatchQueue(label: "vibes.resourceLoader"))
+                self.resourceLoader = loader
+                newPlayerItem = AVPlayerItem(asset: asset)
+                url = URL(string: streamUrl)! // keep for logging
             }
 
             // Remove old observers
@@ -442,6 +448,7 @@ class PlayerManager: NSObject, ObservableObject {
             // Use YouTube API duration as source of truth (asset duration is often doubled)
             let assetDuration = item.asset.duration.seconds
             print("🎵 [Player] Asset ready - YouTube API duration: \(self.duration)s, asset duration: \(assetDuration)s")
+            print("🎵 [Player] Tracks: \(item.asset.tracks.count), duration isFinite: \(assetDuration.isFinite)")
 
             // If we have YouTube API duration, KEEP it and ignore asset
             if self.duration > 0 {
@@ -469,6 +476,13 @@ class PlayerManager: NSObject, ObservableObject {
 
             if playerState == .loading {
                 playerState = .playing
+            }
+            // Ensure playback starts even if play() was called before ready
+            if player?.rate == 0 {
+                let speed = UserDefaults.standard.double(forKey: "playbackSpeed")
+                let rate = Float(speed == 0 ? 1.0 : speed)
+                player?.rate = rate
+                print("🎵 [Player] Auto-resumed at rate \(rate) after readyToPlay")
             }
         case .failed:
             if let error = item.error {

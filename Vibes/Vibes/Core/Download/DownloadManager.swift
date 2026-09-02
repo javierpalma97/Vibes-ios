@@ -73,7 +73,19 @@ class DownloadManager: NSObject, ObservableObject {
 
     func isDownloaded(_ songId: String) -> Bool {
         let fileURL = localFileURL(for: songId)
-        return FileManager.default.fileExists(atPath: fileURL.path)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+        // Ignore 0-byte files (failed downloads that left empty files) – matches "51 canciones ZERO KB" bug
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attrs[.size] as? UInt64, size < 1024 {
+            // File is empty or too small – treat as not downloaded and clean up
+            try? FileManager.default.removeItem(at: fileURL)
+            return false
+        }
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attrs[.size] as? UInt64 {
+            return size > 0
+        }
+        return true
     }
 
     func downloadState(for songId: String) -> DownloadState {
@@ -87,7 +99,8 @@ class DownloadManager: NSObject, ObservableObject {
 
     func download(song: Song) async {
         guard !isDownloaded(song.id) else { return }
-        guard activeDownloads[song.id] == nil else { return }
+        // Prevent duplicate downloads – allow retry if previous failed
+        if case .downloading = activeDownloads[song.id] { return }
 
         activeDownloads[song.id] = .downloading(progress: 0)
 
@@ -99,21 +112,147 @@ class DownloadManager: NSObject, ObservableObject {
                 throw DownloadError.invalidURL
             }
 
-            // Create download request with headers
-            var request = URLRequest(url: url)
-            request.setValue(InnerTubeClient.shared.getUserAgent(for: clientType), forHTTPHeaderField: "User-Agent")
-            request.setValue("*/*", forHTTPHeaderField: "Accept")
-            request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
-
-            // Start download task
-            let task = urlSession.downloadTask(with: request)
-            task.taskDescription = song.id
-            downloadTasks[song.id] = task
-            task.resume()
+            // Use chunked download via Range header (googlevideo rejects full &range query with 403)
+            try await performChunkedDownload(songId: song.id, url: url, contentLength: contentLength, clientType: clientType)
 
         } catch {
+            print("❌ [Download] Failed for \(song.id): \(error)")
             activeDownloads[song.id] = .failed(error: error.localizedDescription)
         }
+    }
+
+    private func performChunkedDownload(songId: String, url: URL, contentLength: Int64, clientType: InnerTubeClientType) async throws {
+        let destinationURL = localFileURL(for: songId)
+        let downloadsDir = destinationURL.deletingLastPathComponent()
+
+        // Ensure directory exists
+        if !FileManager.default.fileExists(atPath: downloadsDir.path) {
+            try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        }
+        // Remove any existing file
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try? FileManager.default.removeItem(at: destinationURL)
+        }
+        FileManager.default.createFile(atPath: destinationURL.path, contents: nil, attributes: nil)
+        guard let fileHandle = try? FileHandle(forWritingTo: destinationURL) else {
+            throw DownloadError.saveFailed
+        }
+        defer { try? fileHandle.close() }
+
+        var totalLength = contentLength
+        // If contentLength is 0/unknown, we'll discover it from first Content-Range response
+        // Use 200KB chunks – 1MB triggers 403 after 400KB on IOS, 500KB fails, 200KB is safe for ANDROID 139
+        let chunkSize: Int64 = 200_000
+
+        var offset: Int64 = 0
+        var totalWritten: Int64 = 0
+        var discoveredLength: Int64?
+
+        // First, if totalLength is 0, do a probe to discover length via Range 0-999999
+        if totalLength <= 0 {
+            let probeEnd: Int64 = chunkSize - 1
+            let (probeData, probeTotal) = try await fetchChunk(url: url, clientType: clientType, start: 0, end: probeEnd)
+            if let total = probeTotal {
+                totalLength = total
+                discoveredLength = total
+            } else {
+                // Fallback: use probeData count as total if server returned 200 with small range (query style)
+                // But our fetchChunk uses header Range, so probeTotal should be available via Content-Range
+                totalLength = Int64(probeData.count)
+            }
+            try fileHandle.write(contentsOf: probeData)
+            totalWritten += Int64(probeData.count)
+            offset = Int64(probeData.count)
+            await MainActor.run { self.activeDownloads[songId] = .downloading(progress: totalLength > 0 ? Double(totalWritten)/Double(totalLength) : 0.5) }
+            print("📥 [Download] Probe \(songId): \(probeData.count) bytes, total \(totalLength)")
+        }
+
+        // If we still don't know totalLength, try to use contentLength from probe or fallback to streaming
+        if totalLength <= 0 {
+            totalLength = 10_000_000 // fallback estimate, will stop when server returns < chunkSize
+        }
+
+        while offset < totalLength {
+            // Check for cancellation
+            if Task.isCancelled { throw DownloadError.downloadFailed }
+
+            let end = min(offset + chunkSize - 1, totalLength - 1)
+            let (chunkData, chunkTotal) = try await fetchChunk(url: url, clientType: clientType, start: offset, end: end)
+            // If server gave us total via Content-Range and we hadn't known it, update
+            if let ct = chunkTotal, discoveredLength == nil {
+                totalLength = ct
+            }
+            try fileHandle.write(contentsOf: chunkData)
+            totalWritten += Int64(chunkData.count)
+            offset += Int64(chunkData.count)
+
+            let progress = totalLength > 0 ? Double(totalWritten)/Double(totalLength) : 0.5
+            await MainActor.run { self.activeDownloads[songId] = .downloading(progress: progress) }
+            print("📥 [Download] \(songId) chunk \(offset)-\(end) \(chunkData.count) bytes progress \(Int(progress*100))%")
+
+            // If server returned less than requested, we're at EOF
+            if Int64(chunkData.count) < (end - offset + Int64(chunkData.count) + 1) && chunkData.count < chunkSize {
+                // Heuristic: if chunk smaller than requested, might be last chunk
+                if totalWritten >= totalLength || chunkData.count == 0 {
+                    break
+                }
+            }
+            // If we fetched less than chunkSize and totalWritten >= totalLength, break
+            if chunkData.count < chunkSize && totalWritten >= totalLength {
+                break
+            }
+        }
+
+        // Validate final file size
+        let attrs = try? FileManager.default.attributesOfItem(atPath: destinationURL.path)
+        let finalSize = attrs?[.size] as? UInt64 ?? 0
+        print("✅ [Download] Completed \(songId) final size \(finalSize) bytes (expected \(totalLength))")
+        if finalSize < 1024 {
+            // File too small – likely failed (HTML error page or empty)
+            try? FileManager.default.removeItem(at: destinationURL)
+            throw DownloadError.downloadFailed
+        }
+
+        await MainActor.run {
+            self.activeDownloads[songId] = .downloaded
+            self.downloadTasks.removeValue(forKey: songId)
+        }
+    }
+
+    private func fetchChunk(url: URL, clientType: InnerTubeClientType, start: Int64, end: Int64) async throws -> (Data, Int64?) {
+        var request = URLRequest(url: url)
+        request.setValue(InnerTubeClient.shared.getUserAgent(for: clientType), forHTTPHeaderField: "User-Agent")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
+        request.timeoutInterval = 30
+
+        // Use shared session for chunk fetch (no delegate needed)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw DownloadError.downloadFailed }
+
+        // Accept 206 Partial Content or 200 OK (for small query range fallback)
+        guard (200...299).contains(http.statusCode) || http.statusCode == 206 else {
+            print("❌ [Download] Chunk \(start)-\(end) HTTP \(http.statusCode)")
+            if let body = String(data: data, encoding: .utf8) {
+                print("  body preview: \(body.prefix(500))")
+            }
+            throw DownloadError.downloadFailed
+        }
+
+        // Try to parse total length from Content-Range: "bytes 0-999/1718053"
+        var total: Int64? = nil
+        if let cr = http.value(forHTTPHeaderField: "Content-Range") {
+            let parts = cr.components(separatedBy: "/")
+            if parts.count == 2, let t = Int64(parts[1]) {
+                total = t
+            }
+        } else if let cl = http.value(forHTTPHeaderField: "Content-Length"), let len = Int64(cl) {
+            // For 200 with Content-Length, if we requested 0-999, Content-Length will be 1000, not total
+            // Use Content-Range if available, otherwise keep nil
+        }
+
+        return (data, total)
     }
 
     func cancelDownload(songId: String) {
@@ -144,15 +283,25 @@ class DownloadManager: NSObject, ObservableObject {
     // MARK: - Persistence
 
     private func loadDownloadStates() async {
-        // Check which files exist in downloads directory
+        // Check which files exist in downloads directory – ignore 0-byte files (failed downloads)
         if let files = try? FileManager.default.contentsOfDirectory(atPath: downloadsDirectory.path) {
             for file in files {
                 if file.hasSuffix(".m4a") {
+                    let filePath = downloadsDirectory.appendingPathComponent(file).path
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+                       let size = attrs[.size] as? UInt64, size < 1024 {
+                        // Remove empty/corrupt download (matches ZERO KB bug)
+                        try? FileManager.default.removeItem(atPath: filePath)
+                        print("🗑️ [Download] Removed empty file \(file) (\(size) bytes)")
+                        continue
+                    }
                     let songId = String(file.dropLast(4))
                     activeDownloads[songId] = .downloaded
                 }
             }
         }
+        // Log current state
+        print("📥 [Download] Loaded \(activeDownloads.filter { $0.value == .downloaded }.count) downloaded, total size \(formattedDownloadSize)")
     }
 
     func saveDownloadStates() {
