@@ -40,7 +40,9 @@ class AuthenticationManager: ObservableObject {
         UserDefaults.standard.set(email, forKey: "accountEmail")
         UserDefaults.standard.set(imageUrl, forKey: "accountImageUrl")
 
-        isAuthenticated = true
+        isAuthenticated = innerTube.isAuthenticated
+        Task { await MainActor.run { DebugLogger.shared.log("🔐 saveAuthData isAuth=\(self.isAuthenticated) \(self.innerTube.debugAuthState) cookiesLen=\(cookies.count) visitorLen=\(visitorData.count) dataSyncLen=\(dataSyncId.count)") } }
+        print("🔐 [Auth] saveAuthData isAuthenticated=\(isAuthenticated) \(innerTube.debugAuthState)")
     }
 
     func signOut() {

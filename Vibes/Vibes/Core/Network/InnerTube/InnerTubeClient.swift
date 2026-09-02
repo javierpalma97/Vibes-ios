@@ -126,7 +126,11 @@ class InnerTubeClient {
     }
 
     var isAuthenticated: Bool {
-        return cookies != nil
+        return cookies != nil && !(cookies?.isEmpty ?? true) && !(visitorData?.isEmpty ?? true)
+    }
+
+    var debugAuthState: String {
+        "cookies=\(cookies != nil ? "\(cookies!.prefix(20))..." : "nil") visitorData=\(visitorData?.prefix(20) ?? "nil") dataSyncId=\(dataSyncId?.prefix(20) ?? "nil") mapSAPISID=\(cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil)"
     }
 
     func getUserAgent(for clientType: InnerTubeClientType) -> String {
