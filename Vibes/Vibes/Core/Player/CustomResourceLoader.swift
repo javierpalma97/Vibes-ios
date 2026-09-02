@@ -87,20 +87,52 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 }
                 while remaining > 0 {
                     let chunkEnd = min(offset + maxChunk - 1, requestedOffset + totalRequested - 1)
-                    var chunkRequest = URLRequest(url: url)
-                    chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                    chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
-                    chunkRequest.setValue("bytes=\(offset)-\(chunkEnd)", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Chunk fetch bytes=\(offset)-\(chunkEnd)")
-                    let (chunkData, chunkResponse) = try await URLSession.shared.data(for: chunkRequest)
-                    guard let chunkHttp = chunkResponse as? HTTPURLResponse, (200...299).contains(chunkHttp.statusCode) || chunkHttp.statusCode == 206 else {
-                        let code = (chunkResponse as? HTTPURLResponse)?.statusCode ?? -1
-                        print("❌ [ResourceLoader] Chunk HTTP \(code)")
-                        throw NSError(domain: "CustomResourceLoader", code: code)
+                    var chunkData: Data = Data()
+                    var chunkHttp: HTTPURLResponse?
+                    // Try header Range first, then fallback to query &range= for 403 (some itags like 139 fail at 400k with header)
+                    var lastError: Error?
+                    for attempt in 0..<2 {
+                        var chunkRequest: URLRequest
+                        if attempt == 0 {
+                            chunkRequest = URLRequest(url: url)
+                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                            chunkRequest.setValue("bytes=\(offset)-\(chunkEnd)", forHTTPHeaderField: "Range")
+                            print("🔄 [ResourceLoader] Chunk fetch bytes=\(offset)-\(chunkEnd) (header)")
+                        } else {
+                            // Fallback: use query &range= (YouTube accepts both, but 139 fails with header at 400k, query may succeed)
+                            let sep = url.absoluteString.contains("?") ? "&" : "?"
+                            let qUrlString = url.absoluteString + "\(sep)range=\(offset)-\(chunkEnd)"
+                            guard let qUrl = URL(string: qUrlString) else { throw NSError(domain: "CustomResourceLoader", code: -2) }
+                            chunkRequest = URLRequest(url: qUrl)
+                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                            print("🔄 [ResourceLoader] Chunk fallback query range=\(offset)-\(chunkEnd)")
+                        }
+                        do {
+                            let (data, response) = try await URLSession.shared.data(for: chunkRequest)
+                            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) || http.statusCode == 206 else {
+                                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                                print("❌ [ResourceLoader] Chunk HTTP \(code) attempt \(attempt)")
+                                lastError = NSError(domain: "CustomResourceLoader", code: code)
+                                continue // try next attempt
+                            }
+                            chunkData = data
+                            chunkHttp = http as HTTPURLResponse
+                            lastError = nil
+                            break
+                        } catch {
+                            lastError = error
+                            print("❌ [ResourceLoader] Chunk error \(error) attempt \(attempt)")
+                        }
                     }
-                    if httpResponse == nil { httpResponse = chunkHttp as HTTPURLResponse }
-                    if mimeType == nil { mimeType = chunkHttp.mimeType }
-                    if totalLengthFromServer == 0, let cr = chunkHttp.value(forHTTPHeaderField: "Content-Range") {
+                    guard let chunkHttpUnwrapped = chunkHttp else {
+                        throw lastError ?? NSError(domain: "CustomResourceLoader", code: -1)
+                    }
+                    let chunkHttpFinal = chunkHttpUnwrapped
+                    if httpResponse == nil { httpResponse = chunkHttpFinal }
+                    if mimeType == nil { mimeType = chunkHttpFinal.mimeType }
+                    if totalLengthFromServer == 0, let cr = chunkHttpFinal.value(forHTTPHeaderField: "Content-Range") {
                         let parts = cr.components(separatedBy: "/")
                         if parts.count == 2, let total = Int64(parts[1]) { totalLengthFromServer = total }
                     }
