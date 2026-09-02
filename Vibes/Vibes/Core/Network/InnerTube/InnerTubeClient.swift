@@ -278,11 +278,17 @@ class InnerTubeClient {
         // URLSession may override this, so we also need to configure URLSessionConfiguration
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
-        // Send cookies for authenticated requests (all clients now support auth for robustness)
-        if let cookies = cookies {
+        // Send cookies for authenticated requests – but NOT for player with ANDROID/IOS
+        // (player with ANDROID/IOS works without auth and 403 with stale SAPISIDHASH; see logs client=auth -> 403)
+        let shouldSendAuth = {
+            if !isAuthenticated { return false }
+            if endpoint == "player" && (clientType == .android || clientType == .ios) {
+                return false
+            }
+            return true
+        }()
+        if shouldSendAuth, let cookies = cookies {
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
-
-            // Add SAPISIDHASH for authenticated requests
             if let sapisidHash = generateSAPISIDHASH() {
                 request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
             }
