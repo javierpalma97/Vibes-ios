@@ -46,11 +46,12 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private func handleLoadingRequest(_ loadingRequest: AVAssetResourceLoadingRequest, url: URL) async {
         do {
             var request = URLRequest(url: url)
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("*/*", forHTTPHeaderField: "Accept")
 
-            // Don't set ANY custom headers - let URLSession use defaults
-            // request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-
-            // Handle byte range request - but request more data for tiny probes
+            // Handle byte range request – cap to avoid YouTube 403 on huge ranges (>400KB for IOS)
+            // Tests: ANDROID 139 200KB sequential full OK, 256KB IOS fails at 256k, 500KB fails. 200KB is safest.
+            let maxChunk: Int64 = 200_000
             if let dataRequest = loadingRequest.dataRequest {
                 var requestedOffset = dataRequest.requestedOffset
                 var requestedLength = dataRequest.requestedLength
@@ -61,11 +62,18 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     requestedLength = 32768  // 32KB
                 }
 
-                // Always add Range header
-                if requestedLength > 0 && requestedLength < Int.max - 1 {
+                // Cap huge/open-ended requests (AVPlayer may request entire file)
+                if requestedLength <= 0 || requestedLength >= Int.max - 1 || requestedLength > maxChunk {
+                    let original = requestedLength
+                    requestedLength = Int(maxChunk)
+                    print("🔄 [ResourceLoader] Capping huge request \(original) to \(requestedLength) bytes for YouTube throttling")
+                }
+
+                // Always add Range header with capped length
+                if requestedLength > 0 {
                     let rangeEnd = requestedOffset + Int64(requestedLength) - 1
                     request.setValue("bytes=\(requestedOffset)-\(rangeEnd)", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Requesting range: bytes=\(requestedOffset)-\(rangeEnd)")
+                    print("🔄 [ResourceLoader] Requesting range: bytes=\(requestedOffset)-\(rangeEnd) (capped from \(dataRequest.requestedLength))")
                 } else {
                     request.setValue("bytes=\(requestedOffset)-", forHTTPHeaderField: "Range")
                     print("🔄 [ResourceLoader] Requesting range: bytes=\(requestedOffset)-")
@@ -93,24 +101,27 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 return
             }
 
-            // Fill in content information
+            // Fill in content information – prioritize Content-Range total over Content-Length (chunk size)
             if let contentInfoRequest = loadingRequest.contentInformationRequest {
                 let mimeType = httpResponse.mimeType
                 if let mimeType = mimeType {
                     contentInfoRequest.contentType = mimeType
                 }
 
-                // Get content length
+                // Get total content length – MUST use Content-Range for 206 responses
                 var contentLength: Int64 = 0
-                if let contentLengthString = httpResponse.value(forHTTPHeaderField: "Content-Length"),
-                   let length = Int64(contentLengthString) {
-                    contentLength = length
-                } else if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") {
-                    // Parse "bytes 0-999/1000" format
+                if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") {
+                    // Parse "bytes 0-999/1718053" format
                     let components = contentRange.components(separatedBy: "/")
                     if components.count == 2, let total = Int64(components[1]) {
                         contentLength = total
                     }
+                }
+                if contentLength == 0, let contentLengthString = httpResponse.value(forHTTPHeaderField: "Content-Length"),
+                   let length = Int64(contentLengthString) {
+                    contentLength = length
+                    // If we only have Content-Length for a Range request, it's the chunk size, not total
+                    // Try to infer total from Content-Range if available, otherwise keep chunk size as fallback
                 }
 
                 contentInfoRequest.contentLength = contentLength
