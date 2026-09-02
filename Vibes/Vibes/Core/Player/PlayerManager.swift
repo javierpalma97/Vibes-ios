@@ -59,6 +59,8 @@ class PlayerManager: NSObject, ObservableObject {
 
     private var streamUrlCache: [String: (url: String, expiry: TimeInterval)] = [:]
     private var resourceLoader: CustomResourceLoader?
+    private var retryCount = 0
+    private var lastRetrySongId: String?
 
     // Skip silence support (Note: Full implementation requires AVAudioEngine for buffer access)
     nonisolated(unsafe) private var silenceCheckTimer: Timer?
@@ -484,6 +486,9 @@ class PlayerManager: NSObject, ObservableObject {
             if playerState == .loading {
                 playerState = .playing
             }
+            // Reset retry on success
+            retryCount = 0
+            lastRetrySongId = nil
             // Ensure playback starts even if play() was called before ready
             if player?.rate == 0 {
                 let speed = UserDefaults.standard.double(forKey: "playbackSpeed")
@@ -494,11 +499,26 @@ class PlayerManager: NSObject, ObservableObject {
         case .failed:
             if let error = item.error {
                 print("❌ [Player] Error: \(error.localizedDescription)")
-                Task { await MainActor.run { DebugLogger.shared.log("❌ AVItem failed \(error.localizedDescription) id=\(self.currentSong?.id ?? "?")") } }
+                Task { await MainActor.run { DebugLogger.shared.log("❌ AVItem failed \(error.localizedDescription) id=\(self.currentSong?.id ?? "?") retry=\(self.retryCount)") } }
                 playerState = .error(error)
-                // Fallback: try direct URL without custom loader (por si el loader es el problema en este dispositivo)
-                if let song = self.currentSong, let urlStr = item.asset.description as String? {
-                    Task { await MainActor.run { DebugLogger.shared.log("↩️ fallback directo no implementado, revisa DebugLog") } }
+                // Auto-retry una vez para 403 intermitentes (pa ti toa, Dai Dai) – al cambiar de canción y volver funciona
+                if let song = self.currentSong, retryCount < 1 {
+                    let failedId = song.id
+                    if lastRetrySongId != failedId {
+                        retryCount += 1
+                        lastRetrySongId = failedId
+                        print("🔄 [Player] Reintentando \(song.title) en 1.2s (retry \(retryCount))")
+                        Task { await MainActor.run { DebugLogger.shared.log("🔄 retry \(song.title) en 1.2s") } }
+                        Task {
+                            try? await Task.sleep(nanoseconds: 1_200_000_000)
+                            // Invalida cache para forzar nueva URL (expire/ip)
+                            self.streamUrlCache.removeValue(forKey: song.id)
+                            await self.playSong(song)
+                        }
+                    }
+                } else {
+                    retryCount = 0
+                    lastRetrySongId = nil
                 }
             }
         case .unknown:

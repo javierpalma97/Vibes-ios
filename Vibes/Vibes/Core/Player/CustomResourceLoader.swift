@@ -91,7 +91,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     var chunkHttp: HTTPURLResponse?
                     // Try header Range first, then fallback to query &range= for 403 (some itags like 139 fail at 400k with header)
                     var lastError: Error?
-                    for attempt in 0..<2 {
+                    for attempt in 0..<3 {
                         var chunkRequest: URLRequest
                         if attempt == 0 {
                             chunkRequest = URLRequest(url: url)
@@ -99,8 +99,9 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                             chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
                             chunkRequest.setValue("bytes=\(offset)-\(chunkEnd)", forHTTPHeaderField: "Range")
                             print("🔄 [ResourceLoader] Chunk fetch bytes=\(offset)-\(chunkEnd) (header)")
-                        } else {
-                            // Fallback: use query &range= (YouTube accepts both, but 139 fails with header at 400k, query may succeed)
+                            await MainActor.run { DebugLogger.shared.log("🔄 chunk \(offset)-\(chunkEnd) header") }
+                        } else if attempt == 1 {
+                            // Fallback: use query &range=
                             let sep = url.absoluteString.contains("?") ? "&" : "?"
                             let qUrlString = url.absoluteString + "\(sep)range=\(offset)-\(chunkEnd)"
                             guard let qUrl = URL(string: qUrlString) else { throw NSError(domain: "CustomResourceLoader", code: -2) }
@@ -108,13 +109,26 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                             chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                             chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
                             print("🔄 [ResourceLoader] Chunk fallback query range=\(offset)-\(chunkEnd)")
+                            await MainActor.run { DebugLogger.shared.log("🔄 chunk fallback query \(offset)-\(chunkEnd)") }
+                        } else {
+                            // Last attempt: smaller chunk 100KB with header + delay (rate-limit)
+                            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
+                            let smallEnd = min(offset + 100_000 - 1, requestedOffset + totalRequested - 1)
+                            chunkRequest = URLRequest(url: url)
+                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                            chunkRequest.setValue("bytes=\(offset)-\(smallEnd)", forHTTPHeaderField: "Range")
+                            print("🔄 [ResourceLoader] Chunk retry small 100KB bytes=\(offset)-\(smallEnd)")
+                            await MainActor.run { DebugLogger.shared.log("🔄 chunk retry small \(offset)-\(smallEnd)") }
                         }
                         do {
                             let (data, response) = try await URLSession.shared.data(for: chunkRequest)
                             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) || http.statusCode == 206 else {
                                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                                 print("❌ [ResourceLoader] Chunk HTTP \(code) attempt \(attempt)")
+                                await MainActor.run { DebugLogger.shared.log("❌ chunk HTTP \(code) attempt \(attempt)") }
                                 lastError = NSError(domain: "CustomResourceLoader", code: code)
+                                if attempt < 2 { try? await Task.sleep(nanoseconds: 400_000_000) }
                                 continue // try next attempt
                             }
                             chunkData = data
@@ -124,6 +138,8 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                         } catch {
                             lastError = error
                             print("❌ [ResourceLoader] Chunk error \(error) attempt \(attempt)")
+                            await MainActor.run { DebugLogger.shared.log("❌ chunk error \(error.localizedDescription) attempt \(attempt)") }
+                            if attempt < 2 { try? await Task.sleep(nanoseconds: 400_000_000) }
                         }
                     }
                     guard let chunkHttpUnwrapped = chunkHttp else {

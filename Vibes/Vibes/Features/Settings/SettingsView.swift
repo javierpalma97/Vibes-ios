@@ -43,6 +43,13 @@ struct SettingsView: View {
                     }
                 }
 
+                // Debug Section (sin necesidad de Mac/Console) - arriba para evitar barra mini-player
+                Section(header: Text("Debug")) {
+                    NavigationLink(destination: DebugLogView()) {
+                        Label("Ver logs de reproducción", systemImage: "doc.text.magnifyingglass")
+                    }
+                }
+
                 // Playback Section
                 Section(header: Text("Playback")) {
                     Picker("Audio Quality", selection: $audioQuality) {
@@ -108,14 +115,9 @@ struct SettingsView: View {
                     }
                 }
 
-                // Debug Section (sin necesidad de Mac/Console)
-                Section(header: Text("Debug")) {
-                    NavigationLink(destination: DebugLogView()) {
-                        Label("Ver logs de reproducción", systemImage: "doc.text.magnifyingglass")
-                    }
-                }
             }
             .navigationTitle("Settings")
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
         }
     }
 
