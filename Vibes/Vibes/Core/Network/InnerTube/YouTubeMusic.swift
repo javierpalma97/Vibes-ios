@@ -284,8 +284,15 @@ class YouTubeMusic {
             "playlistId": "RDAMVM\(videoId)"
         ]
 
-        // Try multiple clients in order - AndroidVR first (matches working Android app)
-        let clients: [InnerTubeClientType] = [.androidVR, .ios, .android, .tvEmbedded, .web]
+        // Try multiple clients in order (matching InnerTune-dev):
+        // 1. ANDROID_MUSIC first if logged in (plays age-restricted songs)
+        // 2. IOS (works without login)
+        // 3. TVHTML5 (fallback for restricted content)
+        var clients: [InnerTubeClientType] = []
+        if client.isAuthenticated {
+            clients.append(.androidMusic)
+        }
+        clients.append(contentsOf: [.ios, .tvEmbedded, .androidMusic, .android, .web])
 
         for clientType in clients {
             do {
@@ -295,6 +302,13 @@ class YouTubeMusic {
                     clientType: clientType,
                     responseType: PlayerResponse.self
                 )
+
+                // Check playability status (matching InnerTune-dev)
+                guard response.playabilityStatus?.status == "OK" else {
+                    let reason = response.playabilityStatus?.reason
+                    print("⚠️ [YouTube API] Client \(clientType) not playable: \(reason ?? "unknown reason")")
+                    continue
+                }
 
                 // Check if we got streaming data with valid URLs or signatureCipher
                 if let streamingData = response.streamingData,
@@ -445,8 +459,8 @@ class YouTubeMusic {
     }
 
     // Get stream URL optimized for downloading (with range parameter)
-    func getStreamUrlForDownload(videoId: String) async throws -> (url: String, contentLength: Int64) {
-        let (playerResponse, _) = try await getPlayer(videoId: videoId)
+    func getStreamUrlForDownload(videoId: String) async throws -> (url: String, contentLength: Int64, clientType: InnerTubeClientType) {
+        let (playerResponse, usedClientType) = try await getPlayer(videoId: videoId)
 
         guard let streamingData = playerResponse.streamingData else {
             throw InnerTubeError.invalidResponse
@@ -489,7 +503,7 @@ class YouTubeMusic {
             url += "&range=0-\(contentLength)"
         }
 
-        return (url: url, contentLength: contentLength)
+        return (url: url, contentLength: contentLength, clientType: usedClientType)
     }
 
     private func selectBestAudioFormat(_ formats: [PlayerResponse.StreamingData.Format]) -> PlayerResponse.StreamingData.Format? {

@@ -92,8 +92,8 @@ class DownloadManager: NSObject, ObservableObject {
         activeDownloads[song.id] = .downloading(progress: 0)
 
         do {
-            // Get stream URL with content length
-            let (streamUrl, contentLength) = try await ytMusic.getStreamUrlForDownload(videoId: song.id)
+            // Get stream URL with content length and client type
+            let (streamUrl, contentLength, clientType) = try await ytMusic.getStreamUrlForDownload(videoId: song.id)
 
             guard let url = URL(string: streamUrl) else {
                 throw DownloadError.invalidURL
@@ -101,7 +101,7 @@ class DownloadManager: NSObject, ObservableObject {
 
             // Create download request with headers
             var request = URLRequest(url: url)
-            request.setValue("com.google.android.apps.youtube.music/7.51.52 (Linux; U; Android 13)", forHTTPHeaderField: "User-Agent")
+            request.setValue(InnerTubeClient.shared.getUserAgent(for: clientType), forHTTPHeaderField: "User-Agent")
             request.setValue("*/*", forHTTPHeaderField: "Accept")
             request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
 

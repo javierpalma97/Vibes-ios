@@ -5,8 +5,9 @@ enum InnerTubeClientType: String {
     case web = "WEB"
     case tvEmbedded = "TVHTML5_SIMPLY_EMBEDDED_PLAYER"
     case webCreator = "WEB_CREATOR"
-    case ios = "IOS_MUSIC"
-    case android = "ANDROID_MUSIC"
+    case ios = "IOS"
+    case android = "ANDROID"
+    case androidMusic = "ANDROID_MUSIC"
     case androidVR = "ANDROID_VR"
 }
 
@@ -49,17 +50,42 @@ class InnerTubeClient {
     static let shared = InnerTubeClient()
 
     private let baseURL = "https://music.youtube.com/youtubei/v1"
-    
-    // Load API key from plist file, fallback to hardcoded value if not found
-    private var apiKey: String {
+
+    // Default visitor data (matching InnerTune-dev)
+    private let defaultVisitorData = "CgtsZG1ySnZiQWtSbyiMjuGSBg%3D%3D"
+
+    // Load API keys from plist file
+    private func apiKey(for clientType: InnerTubeClientType) -> String {
+        let keyName: String
+        switch clientType {
+        case .webRemix: keyName = "WEB_REMIX_API_KEY"
+        case .web: keyName = "WEB_API_KEY"
+        case .tvEmbedded: keyName = "TVHTML5_API_KEY"
+        case .webCreator: keyName = "WEB_REMIX_API_KEY"
+        case .ios: keyName = "IOS_API_KEY"
+        case .android: keyName = "ANDROID_API_KEY"
+        case .androidMusic: keyName = "ANDROID_MUSIC_API_KEY"
+        case .androidVR: keyName = "ANDROID_MUSIC_API_KEY"
+        }
+
         if let path = Bundle.main.path(forResource: "APIKeys", ofType: "plist"),
            let plist = NSDictionary(contentsOfFile: path),
-           let key = plist["YouTubeAPIKey"] as? String,
+           let key = plist[keyName] as? String,
            !key.isEmpty && key != "YOUR_API_KEY_HERE" {
             return key
         }
-        // Fallback to default key (public YouTube web client key)
-        return "YOUR_API_KEY_HERE"
+
+        // Fallback to default keys (matching InnerTune-dev)
+        switch clientType {
+        case .webRemix: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
+        case .web: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3"
+        case .tvEmbedded: return "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8"
+        case .webCreator: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
+        case .ios: return "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
+        case .android: return "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
+        case .androidMusic: return "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI"
+        case .androidVR: return "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI"
+        }
     }
 
     private var visitorData: String?
@@ -142,7 +168,7 @@ class InnerTubeClient {
         switch clientType {
         case .webRemix, .webCreator, .tvEmbedded:
             loginSupported = true
-        case .ios, .android, .androidVR, .web:
+        case .ios, .android, .androidMusic, .androidVR, .web:
             loginSupported = false
         }
 
@@ -158,8 +184,8 @@ class InnerTubeClient {
             deviceMake = "Apple"
             deviceModel = "iPhone16,2"  // iPhone 15 Pro
             osName = "iOS"
-            osVersion = "18.0.0.22A3354"
-        case .android:
+            osVersion = "17.5.1.21F90"
+        case .android, .androidMusic:
             deviceMake = "Google"
             deviceModel = "Pixel 8"
             osName = "Android"
@@ -187,7 +213,7 @@ class InnerTubeClient {
                 clientVersion: clientVersion,
                 gl: "US",
                 hl: "en",
-                visitorData: visitorData,
+                visitorData: visitorData ?? defaultVisitorData,
                 deviceMake: deviceMake,
                 deviceModel: deviceModel,
                 osName: osName,
@@ -209,17 +235,19 @@ class InnerTubeClient {
     private func getClientInfo(for clientType: InnerTubeClientType) -> (String, String, String?) {
         switch clientType {
         case .webRemix:
-            return ("WEB_REMIX", "1.20250310.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+            return ("WEB_REMIX", "1.20220606.03.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
         case .web:
-            return ("WEB", "2.20250312.04.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+            return ("WEB", "2.2021111", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
         case .tvEmbedded:
-            return ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", "Mozilla/5.0 (PlayStation; PlayStation 4/12.02) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15")
+            return ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", "Mozilla/5.0 (PlayStation 4 5.55) AppleWebKit/601.2 (KHTML, like Gecko)")
         case .webCreator:
-            return ("WEB_CREATOR", "1.20250312.03.01", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+            return ("WEB_CREATOR", "1.20220606.03.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.157 Safari/537.36")
         case .ios:
-            return ("IOS_MUSIC", "7.51", "com.google.ios.youtube.music/7.51 (iPhone; U; CPU iOS 18_0 like Mac OS X)")
+            return ("IOS", "19.29.1", "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)")
         case .android:
-            return ("ANDROID_MUSIC", "7.51.52", "com.google.android.apps.youtube.music/7.51.52 (Linux; U; Android 13)")
+            return ("ANDROID", "17.13.3", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36")
+        case .androidMusic:
+            return ("ANDROID_MUSIC", "5.01", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36")
         case .androidVR:
             return ("ANDROID_VR", "1.43.32", "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)")
         }
@@ -230,7 +258,8 @@ class InnerTubeClient {
         body: [String: Any],
         clientType: InnerTubeClientType = .webRemix
     ) -> URLRequest? {
-        guard let url = URL(string: "\(baseURL)/\(endpoint)?key=\(apiKey)&prettyPrint=false") else {
+        let key = apiKey(for: clientType)
+        guard let url = URL(string: "\(baseURL)/\(endpoint)?key=\(key)&prettyPrint=false") else {
             return nil
         }
 
@@ -239,10 +268,11 @@ class InnerTubeClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
 
-        // Add YouTube-specific headers (matching Android implementation)
-        let (_, clientVersion, userAgent) = getClientInfo(for: clientType)
-        request.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")  // WEB_REMIX client ID
+        // Add YouTube-specific headers (matching InnerTune-dev implementation)
+        let (clientName, clientVersion, userAgent) = getClientInfo(for: clientType)
+        request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
 
@@ -255,7 +285,7 @@ class InnerTubeClient {
         switch clientType {
         case .webRemix, .webCreator, .tvEmbedded:
             loginSupported = true
-        case .ios, .android, .androidVR, .web:
+        case .ios, .android, .androidMusic, .androidVR, .web:
             loginSupported = false
         }
 
@@ -359,6 +389,7 @@ enum InnerTubeError: Error {
     case decodingError(Error)
     case notAuthenticated
     case authenticationExpired
+    case playbackNotAllowed(reason: String?)
 }
 
 // Simple SHA1 implementation for SAPISIDHASH
