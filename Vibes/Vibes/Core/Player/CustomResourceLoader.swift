@@ -99,8 +99,19 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     }
 
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
-        for (_, session) in Self.activeDownloads {
+        for (key, session) in Self.activeDownloads {
             session.pendingRequests.removeAll { $0.request == loadingRequest }
+            // Sin peticiones pendientes (canción saltada): parar la descarga en
+            // segundo plano. Antes seguía descargando y multiplicaba las conexiones
+            // concurrentes a googlevideo → throttling/403 para la canción actual.
+            if session.pendingRequests.isEmpty && session.isDownloading && !session.isComplete {
+                session.downloadTask?.cancel()
+                session.isDownloading = false
+                session.isComplete = true
+                session.error = CancellationError()
+                try? FileManager.default.removeItem(at: session.tempFile)
+                Self.activeDownloads.removeValue(forKey: key)
+            }
         }
     }
 
@@ -201,7 +212,8 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     await MainActor.run { DebugLogger.shared.log("📥 stream \(pct)% \(session.downloadedSize)/\(session.totalSize)") }
                 }
 
-                try? await Task.sleep(nanoseconds: 30_000_000)
+                // ~1.6MB/s por sesión: sobra para audio y evita abuso de googlevideo
+                try? await Task.sleep(nanoseconds: 120_000_000)
 
                 if data.count < chunkSize { break }
             } catch {

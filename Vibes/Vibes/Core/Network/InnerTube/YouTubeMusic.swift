@@ -295,7 +295,12 @@ class YouTubeMusic {
         // WEB_REMIX exige poToken → 403, por eso va el último aunque haya sesión.
         // ANDROID/IOS van sin auth (shouldSendAuth=false) y tiran 206 aunque estés logueado.
         var clients: [InnerTubeClientType] = []
-        if client.isAuthenticated {
+        if client.hasBearer && !client.hasCookieAuth {
+            // Bearer-only (OAuth sin cookies): el token del device-flow TV solo lo acepta
+            // el cliente TV. androidMusic/webRemix/ios+Bearer dan 400 sistemático.
+            // android/ios van sin auth (buildRequest los excluye) como fallback público.
+            clients.append(contentsOf: [.tv, .tvEmbedded, .android, .ios, .webRemix, .web])
+        } else if client.isAuthenticated {
             clients.append(contentsOf: [.androidMusic, .android, .ios, .webRemix, .tvEmbedded, .web])
         } else {
             // Unauthenticated: ANDROID permite 1.7M con 200k, IOS throttlea
@@ -463,18 +468,19 @@ class YouTubeMusic {
             throw InnerTubeError.invalidResponse
         }
 
-        // Attempt to deobfuscate throttling parameter (n param)
-        let unthrottledUrl = await ThrottlingDecipher.shared.deobfuscate(url: baseUrl, playerResponse: assetsResponse)
-
-        // If we still have no n param (common with Android clients) try WEB formats to get an n-bearing URL
-        var finalUrl = unthrottledUrl
-        if !unthrottledUrl.contains("n=") {
-            if let webFormats = assetsResponse?.streamingData?.adaptiveFormats ?? assetsResponse?.streamingData?.formats,
-               let webFormat = selectBestAudioFormat(webFormats),
-               let webUrl = webFormat.url ?? decodeSignatureCipher(webFormat.signatureCipher) {
-                let det = await ThrottlingDecipher.shared.deobfuscate(url: webUrl, playerResponse: assetsResponse)
-                finalUrl = det
-            }
+        // Attempt to deobfuscate throttling parameter (n param).
+        // Un `n` sin decodificar = googlevideo corta ~1MB y luego 403 persistente.
+        // Una URL SIN `n` no sufre throttling: es el caso bueno, no hay que "buscar" una con `n`.
+        var (finalUrl, deciphered) = await ThrottlingDecipher.shared.deobfuscate(url: baseUrl, playerResponse: assetsResponse)
+        await MainActor.run { DebugLogger.shared.log("🔍 streamUrl \(usedClientType) hasN=\(finalUrl.contains("n=")) deciphered=\(deciphered) itag=\(bestFormat.itag ?? 0)") }
+        if finalUrl.contains("n=") && !deciphered,
+           let nfree = await fetchNFreeAudioUrl(videoId: videoId) {
+            finalUrl = nfree
+            await MainActor.run { DebugLogger.shared.log("✅ streamUrl usando alternativa sin `n` (sin throttling)") }
+        }
+        // ratebypass=yes mitiga throttling residual en googlevideo
+        if !finalUrl.contains("ratebypass") {
+            finalUrl += finalUrl.contains("?") ? "&ratebypass=yes" : "?ratebypass=yes"
         }
 
         // Calculate expiry time
@@ -531,10 +537,20 @@ class YouTubeMusic {
         let contentLength: Int64 = Int64(bestFormat.contentLength ?? "0") ?? 0
 
         // Get base URL (handle cipher if needed)
-        var baseUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
+        let baseUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
 
-        guard let url = baseUrl else {
+        guard var url = baseUrl else {
             throw InnerTubeError.invalidResponse
+        }
+
+        // Misma protección anti-throttling que streaming: `n` sin decodificar → 403 ~1MB
+        let (det, ok) = await ThrottlingDecipher.shared.deobfuscate(url: url, playerResponse: playerResponse)
+        url = det
+        if url.contains("n=") && !ok, let nfree = await fetchNFreeAudioUrl(videoId: videoId) {
+            url = nfree
+        }
+        if !url.contains("ratebypass") {
+            url += url.contains("?") ? "&ratebypass=yes" : "?ratebypass=yes"
         }
 
         // Do NOT add &range query here – googlevideo now rejects full-range query (403)
@@ -542,6 +558,37 @@ class YouTubeMusic {
         // This keeps URL clean for both streaming (AVPlayer via CustomResourceLoader) and chunked download
 
         return (url: url, contentLength: contentLength, clientType: usedClientType)
+    }
+
+    /// Busca una URL de audio SIN parámetro `n` (iOS/Android noAuth): esas URLs no
+    /// sufren throttling y no necesitan decipher. Fallback cuando el `n` no se pudo decodificar.
+    private func fetchNFreeAudioUrl(videoId: String) async -> String? {
+        let body: [String: Any] = [
+            "videoId": videoId,
+            "racyCheckOk": true,
+            "contentCheckOk": true
+        ]
+        for ctype in [InnerTubeClientType.ios, .android] as [InnerTubeClientType] {
+            do {
+                let resp: PlayerResponse = try await client.makeRequest(
+                    endpoint: "player", body: body, clientType: ctype,
+                    forceNoAuth: true, responseType: PlayerResponse.self
+                )
+                guard resp.playabilityStatus?.status == "OK" else { continue }
+                let fmts = (resp.streamingData?.adaptiveFormats ?? []) + (resp.streamingData?.formats ?? [])
+                if let f = selectBestAudioFormat(fmts),
+                   let u = f.url ?? decodeSignatureCipher(f.signatureCipher) ?? decodeSignatureCipher(f.cipher),
+                   !u.contains("n=") {
+                    let clean = u.replacingOccurrences(of: "\\u0026", with: "&")
+                        .replacingOccurrences(of: "\\u003d", with: "=")
+                        .replacingOccurrences(of: "\\/", with: "/")
+                    return clean
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
     }
 
     private func selectBestAudioFormat(_ formats: [PlayerResponse.StreamingData.Format]) -> PlayerResponse.StreamingData.Format? {
@@ -598,8 +645,8 @@ class YouTubeMusic {
         let hasBearer = OAuthManager.bearerHeaderSync != nil
         let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
             ? (hasBearer
-                ? [(.ios, true), (.webRemix, true), (.android, true), (.ios, false), (.webRemix, false)]
-                : [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true), (.android, true)])
+                ? [(.webRemix, true), (.ios, true), (.android, true), (.ios, false), (.webRemix, false)]
+                : [(.webRemix, false), (.ios, false), (.webRemix, true), (.ios, true), (.android, true)])
             : [(.webRemix, false)]
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
@@ -1405,8 +1452,8 @@ class YouTubeMusic {
         let hasBearer = OAuthManager.bearerHeaderSync != nil
         let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
             ? (hasBearer
-                ? [(.ios, true), (.webRemix, true), (.android, true), (.ios, false), (.webRemix, false)]
-                : [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true)])
+                ? [(.webRemix, true), (.ios, true), (.android, true), (.ios, false), (.webRemix, false)]
+                : [(.webRemix, false), (.ios, false), (.webRemix, true), (.ios, true)])
             : [(.webRemix, false)]
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
@@ -1879,11 +1926,28 @@ class YouTubeMusic {
             body["continuation"] = continuation
         }
 
-        return try await client.makeRequest(
-            endpoint: "next",
-            body: body,
-            responseType: NextResponse.self
-        )
+        // webRemix+Bearer da 400; el cliente TV es el único que acepta Bearer
+        let ctype: InnerTubeClientType = client.hasBearer ? .tv : .webRemix
+        do {
+            return try await client.makeRequest(
+                endpoint: "next",
+                body: body,
+                clientType: ctype,
+                responseType: NextResponse.self
+            )
+        } catch {
+            // Fallback público sin auth (radio de contenido público no necesita login)
+            if client.hasBearer {
+                return try await client.makeRequest(
+                    endpoint: "next",
+                    body: body,
+                    clientType: .webRemix,
+                    forceNoAuth: true,
+                    responseType: NextResponse.self
+                )
+            }
+            throw error
+        }
     }
 
     // Get a radio queue (auto-mix) for a song - returns songs and continuation token

@@ -12,8 +12,9 @@ final class ThrottlingDecipher {
 
     private init() {}
 
-    /// Returns a URL with a deobfuscated `n` parameter when possible.
-    func deobfuscate(url: String, playerResponse: PlayerResponse?) async -> String {
+    /// Returns a URL with a deobfuscated `n` parameter when possible, plus whether
+    /// the `n` was actually deciphered. Un `n` sin decodificar = googlevideo corta ~1MB y 403.
+    func deobfuscate(url: String, playerResponse: PlayerResponse?) async -> (url: String, deciphered: Bool) {
         // Clean escaped separators from InnerTube (e.g. \u0026)
         let cleanUrl = url
             .replacingOccurrences(of: "\\u0026", with: "&")
@@ -36,7 +37,7 @@ final class ThrottlingDecipher {
         }
 
         guard let foundN = nValue else {
-            return cleanUrl
+            return (cleanUrl, true) // sin `n`: no hay throttling que decodificar
         }
 
         // Ensure n param is in items
@@ -45,7 +46,8 @@ final class ThrottlingDecipher {
         }
 
         guard let jsUrl = playerResponse?.assets?.js else {
-            return cleanUrl
+            Task { @MainActor in DebugLogger.shared.log("⚠️ decipher sin assets.js, `n` queda sin decodificar (\(foundN.prefix(12))...)") }
+            return (cleanUrl, false)
         }
 
         do {
@@ -54,7 +56,8 @@ final class ThrottlingDecipher {
                   let context = cachedContext,
                   let fn = context.objectForKeyedSubscript(funcName),
                   fn.isObject else {
-                return cleanUrl
+                Task { @MainActor in DebugLogger.shared.log("⚠️ decipher sin función n, `n` sin decodificar") }
+                return (cleanUrl, false)
             }
 
             if let result = fn.call(withArguments: [nValue])?.toString() {
@@ -62,13 +65,13 @@ final class ThrottlingDecipher {
                     items[idx] = URLQueryItem(name: "n", value: result)
                 }
                 let rebuilt = rebuildUrl(base: cleanUrl, items: items)
-                return rebuilt
+                return (rebuilt, true)
             }
         } catch {
-            // Silently fail and return original URL
+            Task { @MainActor in DebugLogger.shared.log("⚠️ decipher error, `n` sin decodificar: \(error.localizedDescription)") }
         }
 
-        return cleanUrl
+        return (cleanUrl, false)
     }
 
     // MARK: - Preparation
