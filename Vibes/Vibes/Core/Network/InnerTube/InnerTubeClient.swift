@@ -273,22 +273,20 @@ class InnerTubeClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "X-Origin")
-        request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
 
-        // Add YouTube-specific headers (matching InnerTune-dev implementation)
+        // Headers EXACTOS de InnerTune-Android (z-huang/InnerTune InnerTube.kt):
+        // - x-origin siempre, Referer SOLO para WEB_REMIX/WEB_CREATOR, SIN Origin, SIN X-Goog-AuthUser/Visitor-Id.
+        // Nuestros extras (Origin, X-Origin mayúscula, Referer en IOS/ANDROID) provocaban 401 sistemático.
         let (clientName, clientVersion, userAgent) = getClientInfo(for: clientType)
         request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
         request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
-        if let vd = visitorData ?? defaultVisitorData as String? {
-            request.setValue(vd, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
+        if clientType == .webRemix || clientType == .webCreator || clientType == .web {
+            request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
         }
 
         // CRITICAL: User-Agent header
-        // URLSession may override this, so we also need to configure URLSessionConfiguration
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         // Send cookies for authenticated requests – but NOT for player with ANDROID/IOS

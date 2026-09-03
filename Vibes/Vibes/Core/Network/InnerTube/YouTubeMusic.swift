@@ -291,12 +291,12 @@ class YouTubeMusic {
         // - IOS 20.42 and ANDROID 20.07 are the most reliable without PO Token (no login required)
         // - ANDROID_MUSIC now requires auth (LOGIN_REQUIRED without cookies), so only try when authenticated
         // - WEB clients now often need poToken and fail with UNPLAYABLE, so deprioritized
-        // Player: ANDROID/IOS no necesitan poToken (MeeTube 2026-06-29, yt-dlp: WEB_REMIX exige GVS po_token → 403 len=0).
-        // Aunque haya sesión, el stream debe salir de ANDROID sin auth; WEB_REMIX auth da URL pero googlevideo 403.
-        // Por eso SIEMPRE se prueba ANDROID/IOS primero, con o sin login.
+        // Player InnerTune: si hay cookie, ANDROID_MUSIC primero (age-restricted), luego IOS, luego TVHTML5+piped.
+        // WEB_REMIX exige poToken → 403, por eso va el último aunque haya sesión.
+        // ANDROID/IOS van sin auth (shouldSendAuth=false) y tiran 206 aunque estés logueado.
         var clients: [InnerTubeClientType] = []
         if client.isAuthenticated {
-            clients.append(contentsOf: [.android, .ios, .webRemix, .androidMusic, .tvEmbedded, .web])
+            clients.append(contentsOf: [.androidMusic, .android, .ios, .webRemix, .tvEmbedded, .web])
         } else {
             // Unauthenticated: ANDROID permite 1.7M con 200k, IOS throttlea
             clients.append(contentsOf: [.android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
@@ -631,10 +631,11 @@ class YouTubeMusic {
 
     /// Browse solo-autenticado para librería privada (VLLM, FEmusic_liked_playlists, historial).
     /// NO hace fallback a noAuth: si todo falla, lanza para que Sync muestre error real en vez de lista vacía.
-    /// Orden: TV+Bearer (YouTube.js: OAuth solo vale con TV) → IOS+Bearer/cookies → WEB_REMIX+Bearer/cookies.
+    /// Orden InnerTune-Android: WEB_REMIX+cookies primero (likedPlaylists/playlist usan WEB_REMIX setLogin=true),
+    /// luego TV+Bearer (solo OAuth sin cookies), luego IOS.
     func browseAuthenticated(browseId: String) async throws -> BrowseResponse {
         let body: [String: Any] = ["browseId": browseId]
-        let attempts: [(InnerTubeClientType, Bool)] = [(.tv, false), (.ios, false), (.webRemix, false)]
+        let attempts: [(InnerTubeClientType, Bool)] = [(.webRemix, false), (.tv, false), (.ios, false)]
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
             do {
