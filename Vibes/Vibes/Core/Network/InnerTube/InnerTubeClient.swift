@@ -225,7 +225,7 @@ class InnerTubeClient {
             ),
             user: InnerTubeContext.UserInfo(
                 lockedSafetyMode: false,
-                onBehalfOfUser: isAuthenticated ? dataSyncId : nil
+                onBehalfOfUser: nil // H3: dataSyncId 11746… numérico causa 401 incluso con cookie válida – InnerTune lo omite para browse
             )
         )
     }

@@ -590,11 +590,27 @@ class YouTubeMusic {
             "browseId": browseId
         ]
 
-        return try await client.makeRequest(
-            endpoint: "browse",
-            body: body,
-            responseType: BrowseResponse.self
-        )
+        // H1: WEB_REMIX+SAPISID 401 → prueba IOS cuando hay sesión (y fallback a noauth si 401)
+        let browseClient: InnerTubeClientType = client.isAuthenticated ? .ios : .webRemix
+        do {
+            return try await client.makeRequest(
+                endpoint: "browse",
+                body: body,
+                clientType: browseClient,
+                responseType: BrowseResponse.self
+            )
+        } catch InnerTubeError.authenticationExpired {
+            // Reintenta una vez sin auth (como hace player) antes de propagar 401
+            if client.isAuthenticated {
+                return try await client.makeRequest(
+                    endpoint: "browse",
+                    body: body,
+                    clientType: .webRemix,
+                    responseType: BrowseResponse.self
+                )
+            }
+            throw InnerTubeError.authenticationExpired
+        }
     }
 
     func getAlbum(browseId: String) async throws -> (YTAlbum, [YTSong]) {
@@ -1066,11 +1082,23 @@ class YouTubeMusic {
             body["params"] = params
         }
 
-        return try await client.makeRequest(
-            endpoint: "browse",
-            body: body,
-            responseType: BrowseResponse.self
-        )
+        let browseClient: InnerTubeClientType = client.isAuthenticated ? .ios : .webRemix
+        do {
+            return try await client.makeRequest(
+                endpoint: "browse",
+                body: body,
+                clientType: browseClient,
+                responseType: BrowseResponse.self
+            )
+        } catch InnerTubeError.authenticationExpired where client.isAuthenticated {
+            // Fallback sin auth si IOS+Bearer falla (cuenta nueva sin librería)
+            return try await client.makeRequest(
+                endpoint: "browse",
+                body: body,
+                clientType: .webRemix,
+                responseType: BrowseResponse.self
+            )
+        }
     }
 
     // MARK: - Explore Page
