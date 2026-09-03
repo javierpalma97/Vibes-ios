@@ -122,6 +122,7 @@ class DownloadManager: NSObject, ObservableObject {
     }
 
     private func performChunkedDownload(songId: String, url: URL, contentLength: Int64, clientType: InnerTubeClientType) async throws {
+        var clientType = clientType
         let destinationURL = localFileURL(for: songId)
         let downloadsDir = destinationURL.deletingLastPathComponent()
 
@@ -172,12 +173,27 @@ class DownloadManager: NSObject, ObservableObject {
             totalLength = 10_000_000 // fallback estimate, will stop when server returns < chunkSize
         }
 
+        var currentURL = url
+        var urlRefreshes = 0
         while offset < totalLength {
             // Check for cancellation
             if Task.isCancelled { throw DownloadError.downloadFailed }
 
             let end = min(offset + chunkSize - 1, totalLength - 1)
-            let (chunkData, chunkTotal) = try await fetchChunk(url: url, clientType: clientType, start: offset, end: end)
+            let chunkData: Data
+            let chunkTotal: Int64?
+            do {
+                (chunkData, chunkTotal) = try await fetchChunk(url: currentURL, clientType: clientType, start: offset, end: end)
+            } catch DownloadError.forbidden where urlRefreshes < 3 {
+                // Cuota de la URL agotada (~1MB): pedir URL fresca y reanudar mismo offset
+                urlRefreshes += 1
+                print("⚠️ [Download] 403 en offset \(offset), pidiendo URL fresca (\(urlRefreshes)/3)...")
+                let (freshUrl, _, freshClient) = try await ytMusic.getStreamUrlForDownload(videoId: songId)
+                guard let fresh = URL(string: freshUrl) else { throw DownloadError.invalidURL }
+                currentURL = fresh
+                clientType = freshClient
+                continue
+            }
             // If server gave us total via Content-Range and we hadn't known it, update
             if let ct = chunkTotal, discoveredLength == nil {
                 totalLength = ct
@@ -225,6 +241,11 @@ class DownloadManager: NSObject, ObservableObject {
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
+        request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        // googlevideo valida sesión por Cookie: sin esto, URLs autenticadas → 403 ~1MB
+        if let ck = InnerTubeClient.shared.currentCookies, !ck.isEmpty {
+            request.setValue(ck, forHTTPHeaderField: "Cookie")
+        }
         request.timeoutInterval = 30
 
         // Use shared session for chunk fetch (no delegate needed)
@@ -237,6 +258,7 @@ class DownloadManager: NSObject, ObservableObject {
             if let body = String(data: data, encoding: .utf8) {
                 print("  body preview: \(body.prefix(500))")
             }
+            if http.statusCode == 403 { throw DownloadError.forbidden }
             throw DownloadError.downloadFailed
         }
 
@@ -434,5 +456,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
 enum DownloadError: Error {
     case invalidURL
     case downloadFailed
+    case forbidden
     case saveFailed
 }

@@ -19,7 +19,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         var pendingRequests: [(request: AVAssetResourceLoadingRequest, offset: Int64, length: Int)] = []
         var downloadTask: Task<Void, Never>?
         var authCookies: String?
-        var authHeader: String?
+        var consecutive403 = 0
 
         init(url: URL, tempFile: URL) {
             self.url = url
@@ -117,10 +117,11 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         guard !session.isDownloading, !session.isComplete else { return }
         session.isDownloading = true
 
-        let isWebUA = userAgent.contains("Chrome") || userAgent.contains("Mozilla")
-        if isWebUA {
-            session.authCookies = InnerTubeClient.shared.currentCookies
-            session.authHeader = buildSAPISIDHASH()
+        // googlevideo valida la sesión por Cookie (no por SAPISIDHASH ni por UA):
+        // se adjuntan SIEMPRE que haya login, venga del cliente que venga la URL.
+        // Sin esto, las URLs emitidas en contexto autenticado mueren con 403 ~1MB.
+        if let ck = InnerTubeClient.shared.currentCookies, !ck.isEmpty {
+            session.authCookies = ck
         }
 
         session.downloadTask = Task { @MainActor in
@@ -138,8 +139,8 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("bytes=\(offset)-\(end)", forHTTPHeaderField: "Range")
             request.setValue("*/*", forHTTPHeaderField: "Accept")
+            request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
             if let ck = session.authCookies { request.setValue(ck, forHTTPHeaderField: "Cookie") }
-            if let ah = session.authHeader { request.setValue(ah, forHTTPHeaderField: "Authorization") }
 
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
@@ -148,13 +149,24 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 }
 
                 guard (200...299).contains(http.statusCode) || http.statusCode == 206 else {
-                    if http.statusCode == 403, offset > 0 {
-                        await MainActor.run { DebugLogger.shared.log("⚠️ stream 403 at \(offset)/\(session.totalSize) descargado, reintentando con nueva URL...") }
+                    if http.statusCode == 403 {
+                        // La cuota por URL de googlevideo se agota (~1MB): reintentar la MISMA
+                        // URL es inútil. Se reintenta 3 veces por si es transitorio y luego se
+                        // falla la sesión para que PlayerManager pida una URL fresca (ya lo hace
+                        // en su retry: playSong → getStreamUrl de nuevo).
+                        session.consecutive403 += 1
+                        await MainActor.run { DebugLogger.shared.log("⚠️ stream 403 at \(offset)/\(session.totalSize) intento \(session.consecutive403)/3 misma URL") }
+                        if session.consecutive403 >= 3 {
+                            session.error = NSError(domain: "CustomResourceLoader", code: 403,
+                                userInfo: [NSLocalizedDescriptionKey: "googlevideo 403 persistente en offset \(offset): URL agotada, pedir fresca"])
+                            break
+                        }
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         continue
                     }
                     throw NSError(domain: "CustomResourceLoader", code: http.statusCode)
                 }
+                session.consecutive403 = 0
 
                 if session.totalSize == 0 {
                     if let cr = http.value(forHTTPHeaderField: "Content-Range") {
@@ -205,7 +217,11 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         processPendingRequests(session)
 
         await MainActor.run {
-            DebugLogger.shared.log("✅ stream pre-download done \(session.downloadedSize)/\(session.totalSize) file=\(session.tempFile.lastPathComponent)")
+            if let err = session.error {
+                DebugLogger.shared.log("❌ stream pre-download FAILED \(session.downloadedSize)/\(session.totalSize): \(err.localizedDescription)")
+            } else {
+                DebugLogger.shared.log("✅ stream pre-download done \(session.downloadedSize)/\(session.totalSize) file=\(session.tempFile.lastPathComponent)")
+            }
         }
 
         Task { @MainActor in
@@ -229,11 +245,17 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             let reqEnd = offset + Int64(length)
 
             if session.isComplete || (length > 0 && availEnd >= reqEnd) || (session.isComplete && availEnd > offset) {
-                let readLen = length > 0 ? length : Int(min(availEnd - offset, Int64(chunkSize())))
-                if let data = readFromFile(session.tempFile, offset: offset, length: readLen) {
+                let readLen = length > 0 ? length : Int(min(max(availEnd - offset, 0), Int64(chunkSize())))
+                if let data = readFromFile(session.tempFile, offset: offset, length: readLen), !data.isEmpty {
                     req.dataRequest?.respond(with: data)
+                    req.finishLoading()
+                } else if let err = session.error {
+                    // Sesión fallida (p.ej. 403 persistente): fallar la petición para que
+                    // AVPlayer dispare el error y PlayerManager reintente con URL fresca
+                    req.finishLoading(with: err)
+                } else {
+                    req.finishLoading()
                 }
-                req.finishLoading()
             } else {
                 remaining.append((req, offset, length))
             }
@@ -253,25 +275,6 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         } else {
             return fh.readDataToEndOfFile()
         }
-    }
-
-    private func buildSAPISIDHASH() -> String? {
-        let cookies = InnerTubeClient.shared.currentCookies ?? ""
-        let map = cookies.split(separator: ";").reduce(into: [String: String]()) { res, part in
-            let t = part.trimmingCharacters(in: .whitespaces)
-            if let eq = t.firstIndex(of: "=") {
-                res[String(t[..<eq])] = String(t[t.index(after: eq)...])
-            }
-        }
-        let sid = map["SAPISID"] ?? map["__Secure-3PAPISID"] ?? map["__Secure-3PSID"]
-        guard let s = sid, !s.isEmpty else { return nil }
-        let ts = Int(Date().timeIntervalSince1970)
-        let input = "\(ts) \(s) https://music.youtube.com"
-        guard let d = input.data(using: .utf8) else { return nil }
-        var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-        d.withUnsafeBytes { _ = CC_SHA1($0.baseAddress, CC_LONG(d.count), &digest) }
-        let hash = digest.map { String(format: "%02hhx", $0) }.joined()
-        return "SAPISIDHASH \(ts)_\(hash)"
     }
 
     private func sha256Hex(_ data: Data) -> String {

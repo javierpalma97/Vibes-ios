@@ -1,5 +1,36 @@
 import Foundation
 import Combine
+import Security
+
+// MARK: - Keychain mínimo para tokens OAuth (los logs mostraban tokens en UserDefaults en claro)
+nonisolated struct OAuthKeychain {
+    static func get(_ key: String) -> String? {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                kSecAttrAccount as String: key,
+                                kSecReturnData as String: true,
+                                kSecMatchLimit as String: kSecMatchLimitOne]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func set(_ value: String?, key: String) {
+        let del: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrAccount as String: key]
+        SecItemDelete(del as CFDictionary)
+        guard let value, let data = value.data(using: .utf8) else { return }
+        let add: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrAccount as String: key,
+                                  kSecValueData as String: data,
+                                  kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock]
+        SecItemAdd(add as CFDictionary, nil)
+    }
+    static func delete(_ key: String) {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                kSecAttrAccount as String: key]
+        SecItemDelete(q as CFDictionary)
+    }
+}
 
 // MARK: - YouTube OAuth2 via TV/device flow (como MusicBot #1670 / lavaplayer #33, yt-dlp --allow-unplayable-formats)
 // Usa el client TV público de YouTube: 861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com
@@ -17,9 +48,11 @@ class OAuthManager: ObservableObject {
 
     // Helpers no-MainActor para InnerTubeClient (evita Swift 6 isolation errors)
     nonisolated static var isAuthenticatedSync: Bool {
-        UserDefaults.standard.string(forKey: "yt_oauth_access_token") != nil
+        if let t = OAuthKeychain.get("yt_oauth_access_token"), !t.isEmpty { return true }
+        return UserDefaults.standard.string(forKey: "yt_oauth_access_token") != nil
     }
     nonisolated static var bearerHeaderSync: String? {
+        if let t = OAuthKeychain.get("yt_oauth_access_token"), !t.isEmpty { return "Bearer \(t)" }
         guard let t = UserDefaults.standard.string(forKey: "yt_oauth_access_token"), !t.isEmpty else { return nil }
         return "Bearer \(t)"
     }
@@ -30,7 +63,7 @@ class OAuthManager: ObservableObject {
     private let deviceCodeURL = URL(string: "https://oauth2.googleapis.com/device/code")!
     private let tokenURL = URL(string: "https://oauth2.googleapis.com/token")!
 
-    // Guardado simple en UserDefaults (Keychain sería mejor, pero así es visible para debug)
+    // Tokens en Keychain; solo la expiración queda en UserDefaults (no sensible)
     private let kAccess = "yt_oauth_access_token"
     private let kRefresh = "yt_oauth_refresh_token"
     private let kExpiry = "yt_oauth_expiry"
@@ -39,18 +72,27 @@ class OAuthManager: ObservableObject {
     private init() { load() }
 
     private func load() {
-        accessToken = UserDefaults.standard.string(forKey: kAccess)
-        refreshToken = UserDefaults.standard.string(forKey: kRefresh)
+        // Keychain primero; migra desde UserDefaults si existe (una sola vez)
+        accessToken = OAuthKeychain.get(kAccess) ?? UserDefaults.standard.string(forKey: kAccess)
+        refreshToken = OAuthKeychain.get(kRefresh) ?? UserDefaults.standard.string(forKey: kRefresh)
+        if OAuthKeychain.get(kAccess) == nil, let a = accessToken {
+            OAuthKeychain.set(a, key: kAccess)
+            UserDefaults.standard.removeObject(forKey: kAccess)
+        }
+        if OAuthKeychain.get(kRefresh) == nil, let r = refreshToken {
+            OAuthKeychain.set(r, key: kRefresh)
+            UserDefaults.standard.removeObject(forKey: kRefresh)
+        }
         if let t = UserDefaults.standard.object(forKey: kExpiry) as? TimeInterval {
             expiresAt = Date(timeIntervalSince1970: t)
         }
         isAuthenticated = accessToken != nil && !(accessToken?.isEmpty ?? true)
-        if isAuthenticated { print("🔐 [OAuth] cargado token \(accessToken?.prefix(20) ?? "")...") }
+        if isAuthenticated { print("🔐 [OAuth] cargado token desde keychain") }
     }
 
     private func save(access: String?, refresh: String?, expiresIn: Int?) {
-        if let a = access { UserDefaults.standard.set(a, forKey: kAccess); accessToken = a }
-        if let r = refresh { UserDefaults.standard.set(r, forKey: kRefresh); refreshToken = r }
+        if let a = access { OAuthKeychain.set(a, key: kAccess); accessToken = a }
+        if let r = refresh { OAuthKeychain.set(r, key: kRefresh); refreshToken = r }
         if let e = expiresIn { let d = Date().addingTimeInterval(TimeInterval(e)); UserDefaults.standard.set(d.timeIntervalSince1970, forKey: kExpiry); expiresAt = d }
         isAuthenticated = accessToken != nil && !(accessToken?.isEmpty ?? true)
         DebugLogger.shared.log("🔐 OAuth save isAuth=\(isAuthenticated) access=\(access?.prefix(20) ?? "nil")...")
@@ -60,6 +102,8 @@ class OAuthManager: ObservableObject {
     }
 
     func signOut() {
+        OAuthKeychain.delete(kAccess)
+        OAuthKeychain.delete(kRefresh)
         UserDefaults.standard.removeObject(forKey: kAccess)
         UserDefaults.standard.removeObject(forKey: kRefresh)
         UserDefaults.standard.removeObject(forKey: kExpiry)
@@ -86,11 +130,23 @@ class OAuthManager: ObservableObject {
 
     var bearerHeader: String? {
         guard let t = accessToken, !t.isEmpty else { return nil }
-        // Si expira en <60s, intenta refresh sincrónico (no bloqueante, el caller puede reintentar)
-        if let exp = expiresAt, exp.timeIntervalSinceNow < 60, let rt = refreshToken {
-            Task { try? await self.refresh() }
-        }
         return "Bearer \(t)"
+    }
+
+    /// Refresca el access_token si expira en <5 min. Llamar con `await` antes de
+    /// peticiones autenticadas (browseAuthenticated/getLikedSongs). Si el refresh
+    /// falla, hace signOut para forzar nuevo login en vez de usar token muerto.
+    func refreshIfNeeded() async {
+        guard accessToken != nil, let rt = refreshToken, !rt.isEmpty else { return }
+        // Sin expiración conocida (tokens legacy) o expira en <5 min → refrescar
+        if let exp = expiresAt, exp.timeIntervalSinceNow >= 300 { return }
+        do {
+            try await refresh()
+            DebugLogger.shared.log("🔄 OAuth refresh ok")
+        } catch {
+            DebugLogger.shared.log("❌ OAuth refresh falló, limpiando sesión: \(error.localizedDescription)")
+            signOut()
+        }
     }
 
     // MARK: - Device flow

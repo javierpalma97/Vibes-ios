@@ -136,6 +136,17 @@ class InnerTubeClient {
 
     var currentCookies: String? { cookies }
 
+    /// Modo de auth actual: Bearer OAuth y/o cookies SAPISID. Cada cliente InnerTube
+    /// acepta un mecanismo distinto (TV=Bearer, WEB_REMIX=SAPISIDHASH), por eso
+    /// browseAuthenticated ordena los intentos según este modo.
+    var hasBearer: Bool { OAuthManager.bearerHeaderSync != nil }
+    var hasCookieAuth: Bool {
+        guard cookies != nil && !(cookies?.isEmpty ?? true) else { return false }
+        return cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil
+            || cookieMap["__Secure-3PSID"] != nil || cookieMap["APISID"] != nil
+            || cookieMap["__Secure-1PAPISID"] != nil
+    }
+
     var debugAuthState: String {
         let oauth = OAuthManager.bearerHeaderSync != nil ? "oauth=\(OAuthManager.bearerHeaderSync!.prefix(10))" : "oauth=nil"
         return "cookies=\(cookies != nil ? "\(cookies!.prefix(20))..." : "nil") visitorData=\(visitorData?.prefix(20) ?? "nil") dataSyncId=\(dataSyncId?.prefix(20) ?? "nil") mapSAPISID=\(cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil) \(oauth)"
@@ -395,16 +406,17 @@ class InnerTubeClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            // Diagnóstico: log del body en TODO error >=400 (los 400 de webRemix+Bearer
+            // y los 401 de TV+cookies necesitan el mensaje real de Google).
+            let bodyPreview = String(data: data.prefix(1000), encoding: .utf8) ?? ""
+            let isAuth = isAuthenticated
+            let isOAuth = OAuthManager.isAuthenticatedSync
+            let dbg = debugAuthState
+            await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) \(clientType) isAuth=\(isAuth) oauth=\(isOAuth) \(dbg) body=\(bodyPreview.prefix(400))") }
+            print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(clientType) \(dbg) oauth=\(isOAuth) body=\(bodyPreview.prefix(1000))")
             // Map 401/403 to authenticationExpired when logged in (session expired)
-            // Si hay Bearer OAuth, no es expirado de cookie, es falta de scope – no hacer signOut automático
             // Si forceNoAuth, no es error de sesión, es solo que ese cliente no necesita auth
             if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && !forceNoAuth && (isAuthenticated || OAuthManager.isAuthenticatedSync) {
-                let bodyPreview = String(data: data.prefix(500), encoding: .utf8) ?? ""
-                let isAuth = isAuthenticated
-                let isOAuth = OAuthManager.isAuthenticatedSync
-                let dbg = debugAuthState
-                await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) isAuth=\(isAuth) oauth=\(isOAuth) \(dbg) body=\(bodyPreview.prefix(200))") }
-                print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(dbg) oauth=\(isOAuth) body=\(bodyPreview.prefix(500))")
                 throw InnerTubeError.authenticationExpired
             }
             throw InnerTubeError.httpError(statusCode: httpResponse.statusCode)
@@ -433,6 +445,8 @@ class InnerTubeClient {
         let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let bodyPreview = String(data: data.prefix(1000), encoding: .utf8) ?? ""
+            await MainActor.run { DebugLogger.shared.log("❌ HTTP raw \(code) \(endpoint) \(clientType) body=\(bodyPreview.prefix(400))") }
             if (code == 401 || code == 403) && !forceNoAuth && (isAuthenticated || OAuthManager.isAuthenticatedSync) {
                 throw InnerTubeError.authenticationExpired
             }

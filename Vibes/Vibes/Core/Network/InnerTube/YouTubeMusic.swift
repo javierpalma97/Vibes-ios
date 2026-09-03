@@ -632,9 +632,23 @@ class YouTubeMusic {
     /// Browse solo-autenticado para librería privada (VLLM, FEmusic_liked_playlists, historial).
     /// NO hace fallback a noAuth: si todo falla, lanza para que Sync muestre error real en vez de lista vacía.
     /// Detecta sign-in prompts en respuesta 200 y prueba siguiente cliente.
+    /// Orden según mecanismo (evidencia de logs):
+    /// - Bearer-only (OAuth sin cookies): TV primero (único que acepta Bearer),
+    ///   luego ANDROID_MUSIC, luego IOS. WEB_REMIX+Bearer da 400 sistemático → último.
+    /// - Solo cookies: WEB_REMIX (SAPISIDHASH) primero, luego ANDROID_MUSIC, luego IOS.
+    ///   TV+cookies da 401 (TV exige Bearer) → se omite.
     func browseAuthenticated(browseId: String) async throws -> BrowseResponse {
+        await OAuthManager.shared.refreshIfNeeded()
         let body: [String: Any] = ["browseId": browseId]
-        let attempts: [(InnerTubeClientType, Bool)] = [(.webRemix, false), (.tv, false), (.ios, false)]
+        let bearer = client.hasBearer, cookies = client.hasCookieAuth
+        let attempts: [(InnerTubeClientType, Bool)]
+        if bearer && !cookies {
+            attempts = [(.tv, false), (.androidMusic, false), (.ios, false), (.webRemix, false)]
+        } else if cookies && !bearer {
+            attempts = [(.webRemix, false), (.androidMusic, false), (.ios, false)]
+        } else {
+            attempts = [(.webRemix, false), (.tv, false), (.androidMusic, false), (.ios, false)]
+        }
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
             do {
@@ -690,7 +704,16 @@ class YouTubeMusic {
     func browseRawAuthenticated(browseId: String) async throws -> [String: Any] {
         let body: [String: Any] = ["browseId": browseId]
         var lastErr: Error = InnerTubeError.authenticationExpired
-        for ctype in [InnerTubeClientType.tv, .ios, .webRemix] as [InnerTubeClientType] {
+        let bearer = client.hasBearer, cookies = client.hasCookieAuth
+        let order: [InnerTubeClientType]
+        if bearer && !cookies {
+            order = [.tv, .androidMusic, .ios, .webRemix]
+        } else if cookies && !bearer {
+            order = [.webRemix, .androidMusic, .ios]
+        } else {
+            order = [.tv, .webRemix, .androidMusic, .ios]
+        }
+        for ctype in order {
             do {
                 if Task.isCancelled { throw CancellationError() }
                 let dict = try await client.makeRawRequest(endpoint: "browse", body: body, clientType: ctype, forceNoAuth: false)
@@ -698,8 +721,12 @@ class YouTubeMusic {
                 let playlistsFound = rawPlaylists(dict).count
                 await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6)) songs=\(songsFound) playlists=\(playlistsFound)") }
                 if songsFound == 0 && playlistsFound == 0 {
-                    let keys2 = Self.deepKeys(dict, depth: 4)
-                    await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) deepKeys=\(keys2.prefix(30))") }
+                    let keys2 = Self.deepKeys(dict, depth: 8)
+                    await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) deepKeys=\(keys2.prefix(40))") }
+                    if let data = try? JSONSerialization.data(withJSONObject: dict),
+                       let sample = String(data: data, encoding: .utf8) {
+                        await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) sample=\(sample.prefix(1500))") }
+                    }
                 }
                 return dict
             } catch let e as URLError where e.code == .cancelled {
@@ -817,19 +844,36 @@ class YouTubeMusic {
                let v = we["videoId"] as? String { vid = v }
             // 4. playlistPanelVideoRenderer (TV/queue)
             if vid == nil, let v = d["videoId"] as? String, d["playlistPanelVideoRenderer"] != nil { vid = v }
-            // 5. any node with videoId + title-like text (TV broad match)
+            // 4b. watchEndpoint bajo cualquier clave *Endpoint (TV: onSelect/selectEndpoint/playEndpoint)
+            if vid == nil {
+                for (k, val) in d where k.hasSuffix("Endpoint") {
+                    if let ed = val as? [String: Any],
+                       let we = ed["watchEndpoint"] as? [String: Any],
+                       let v = we["videoId"] as? String { vid = v; break }
+                }
+            }
+            // 5. any node with videoId + title-like text (TV broad match, incl. tvSurfaceContentRenderer)
             if vid == nil, let v = d["videoId"] as? String {
-                let hasTitle = !(rawTexts(d["title"]).joined().isEmpty) || !(rawTexts(d["flexColumns"] as? [[String: Any]]).isEmpty)
+                let hasTitle = !(rawTexts(d["title"]).joined().isEmpty)
+                    || !(rawTexts(d["header"]).joined().isEmpty)
+                    || !(rawTexts(d["name"]).joined().isEmpty)
+                    || !(rawTexts(d["labelText"]).joined().isEmpty)
+                    || !(rawTexts(d["titleText"]).joined().isEmpty)
+                    || (d["flexColumns"] != nil)
                 if hasTitle { vid = v }
             }
             guard let v = vid, !seen.contains(v) else { return }
-            // Título en flexColumns[0] o title.runs
+            // Título en flexColumns[0], title.runs o claves TV (header/name/labelText/titleText)
             var title = ""
             if let flex = d["flexColumns"] as? [[String: Any]], let first = flex.first,
                let r = first["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any] {
                 title = rawTexts(r["text"]).joined()
             }
             if title.isEmpty { title = rawTexts(d["title"]).joined() }
+            if title.isEmpty { title = rawTexts(d["header"]).joined() }
+            if title.isEmpty { title = rawTexts(d["name"]).joined() }
+            if title.isEmpty { title = rawTexts(d["labelText"]).joined() }
+            if title.isEmpty { title = rawTexts(d["titleText"]).joined() }
             if title.isEmpty, let t = d["title"] as? String { title = t }
             guard !title.isEmpty else { return }
             seen.insert(v)
