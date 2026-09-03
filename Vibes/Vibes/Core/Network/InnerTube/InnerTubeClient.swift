@@ -265,8 +265,9 @@ class InnerTubeClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
+        request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "X-Origin")
+        request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
 
         // Add YouTube-specific headers (matching InnerTune-dev implementation)
         let (clientName, clientVersion, userAgent) = getClientInfo(for: clientType)
@@ -332,6 +333,7 @@ class InnerTubeClient {
 
     private func generateSAPISIDHASH() -> String? {
         guard cookies != nil else {
+            print("⚠️ [Auth] generateSAPISIDHASH no cookies")
             return nil
         }
 
@@ -342,9 +344,13 @@ class InnerTubeClient {
             ?? cookieMap["APISID"]
             ?? cookieMap["__Secure-1PAPISID"]
 
-        guard let sid = sapisid else {
+        guard let sid = sapisid, !sid.isEmpty else {
+            print("⚠️ [Auth] SAPISID vacío mapKeys=\(cookieMap.keys.sorted()) cookiesLen=\(cookies?.count ?? 0)")
+            Task { @MainActor in DebugLogger.shared.log("⚠️ SAPISID vacío map=\(self.cookieMap.keys.sorted().prefix(5)) len=\(self.cookies?.count ?? 0)") }
             return nil
         }
+        // Log sapisid prefix for debug (no exponer completo)
+        print("🔑 [Auth] SAPISID=\(sid.prefix(10))... origin=https://music.youtube.com")
 
         let currentTime = Int(Date().timeIntervalSince1970)
         let origin = "https://music.youtube.com"
