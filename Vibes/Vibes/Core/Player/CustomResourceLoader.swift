@@ -65,8 +65,29 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 }
             }
 
-            // Para googlevideo con auth (WEB_REMIX), mandar Cookie también (si no, 403 len=0 como en tu log vutbVGewIcg con webRemix)
+            // Para googlevideo con auth (WEB_REMIX), mandar Cookie + SAPISIDHASH (si no, 403 len=0 como en tu log vutbVGewIcg con webRemix)
             let authCookies = await MainActor.run { InnerTubeClient.shared.currentCookies }
+            let authHeader = await MainActor.run { () -> String? in
+                // Genera SAPISIDHASH igual que InnerTubeClient para googlevideo con WEB_REMIX
+                guard let cookies = InnerTubeClient.shared.currentCookies else { return nil }
+                // Usa el mismo helper que InnerTubeClient (duplicado aquí para no exponer generate)
+                let map = cookies.split(separator: ";").reduce(into: [String:String]()) { res, part in
+                    let t = part.trimmingCharacters(in: .whitespaces)
+                    if let eq = t.firstIndex(of: "=") {
+                        res[String(t[..<eq])] = String(t[t.index(after: eq)...])
+                    }
+                }
+                let sid = map["SAPISID"] ?? map["__Secure-3PAPISID"] ?? map["__Secure-3PSID"]
+                guard let s = sid, !s.isEmpty else { return nil }
+                let ts = Int(Date().timeIntervalSince1970)
+                let origin = "https://music.youtube.com"
+                let input = "\(ts) \(s) \(origin)"
+                guard let d = input.data(using: .utf8) else { return nil }
+                var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
+                d.withUnsafeBytes { _ = CC_SHA1($0.baseAddress, CC_LONG(d.count), &digest) }
+                let hash = digest.map { String(format: "%02hhx", $0) }.joined()
+                return "SAPISIDHASH \(ts)_\(hash)"
+            }
 
             // Huge requests (AVPlayer pide 0-3M) no deben fetchear todo el fichero → lento y 403 tras 1M.
             // Solo devolvemos el primer maxChunk (200KB) y dejamos que AVPlayer pida el resto secuencialmente.
@@ -93,8 +114,9 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                         chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                         chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
                         if let ck = authCookies { chunkRequest.setValue(ck, forHTTPHeaderField: "Cookie") }
+                        if let ah = authHeader { chunkRequest.setValue(ah, forHTTPHeaderField: "Authorization") }
                         chunkRequest.setValue("bytes=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1)", forHTTPHeaderField: "Range")
-                        print("🔄 [ResourceLoader] Huge cap fetch bytes=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1) (header) ck=\(authCookies != nil)")
+                        print("🔄 [ResourceLoader] Huge cap fetch bytes=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1) (header) ck=\(authCookies != nil) ah=\(authHeader != nil)")
                     } else {
                         let sep = url.absoluteString.contains("?") ? "&" : "?"
                         let qUrlString = url.absoluteString + "\(sep)range=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1)"
@@ -103,6 +125,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                         chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                         chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
                         if let ck = authCookies { chunkRequest.setValue(ck, forHTTPHeaderField: "Cookie") }
+                        if let ah = authHeader { chunkRequest.setValue(ah, forHTTPHeaderField: "Authorization") }
                         print("🔄 [ResourceLoader] Huge fallback query")
                     }
                     do {
@@ -138,6 +161,7 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                 request.setValue("*/*", forHTTPHeaderField: "Accept")
                 if let ck = authCookies { request.setValue(ck, forHTTPHeaderField: "Cookie") }
+                if let ah = authHeader { request.setValue(ah, forHTTPHeaderField: "Authorization") }
                 var fetchOffset = requestedOffset
                 var fetchLength = requestedLength
                 if !isProbe && fetchLength > maxChunk {
@@ -146,10 +170,10 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 if fetchLength > 0 {
                     let rangeEnd = fetchOffset + Int64(fetchLength) - 1
                     request.setValue("bytes=\(fetchOffset)-\(rangeEnd)", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)-\(rangeEnd) (orig \(loadingRequest.dataRequest?.requestedLength ?? 0)) ck=\(authCookies != nil)")
+                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)-\(rangeEnd) (orig \(loadingRequest.dataRequest?.requestedLength ?? 0)) ck=\(authCookies != nil) ah=\(authHeader != nil)")
                 } else {
                     request.setValue("bytes=\(fetchOffset)-", forHTTPHeaderField: "Range")
-                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)- ck=\(authCookies != nil)")
+                    print("🔄 [ResourceLoader] Requesting range: bytes=\(fetchOffset)- ck=\(authCookies != nil) ah=\(authHeader != nil)")
                 }
                 print("🔄 [ResourceLoader] Making request with default headers")
                 print("🔄 [ResourceLoader] URL host: \(url.host ?? "unknown")")
