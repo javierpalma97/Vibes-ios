@@ -26,6 +26,35 @@ class LibraryManager: ObservableObject {
         }
     }
 
+    func deleteAllData() {
+        guard let context = modelContext else { return }
+        let types: [any PersistentModel.Type] = [Song.self, Album.self, Artist.self, Playlist.self, PlaylistSongMap.self, Format.self, SearchHistory.self, PlayEvent.self, Lyrics.self]
+        for t in types {
+            do {
+                try context.delete(model: t)
+            } catch {
+                print("⚠️ deleteAllData \(t) failed: \(error)")
+            }
+        }
+        try? context.save()
+        likedSongs = []
+        playlists = []
+        recentlyPlayed = []
+        searchHistory = []
+        quickPicks = []
+    }
+
+    func clearSearchHistoryData() {
+        guard let context = modelContext else { return }
+        do {
+            try context.delete(model: SearchHistory.self)
+            try context.save()
+            searchHistory = []
+        } catch {
+            print("⚠️ clearSearchHistoryData failed: \(error)")
+        }
+    }
+
     // MARK: - Local Data Loading
 
     private func loadLocalData() async {

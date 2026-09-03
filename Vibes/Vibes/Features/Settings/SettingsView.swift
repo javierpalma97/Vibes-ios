@@ -98,6 +98,10 @@ struct SettingsView: View {
                     Button("Clear Search History") {
                         clearSearchHistory()
                     }
+
+                    Button("Delete All Data", role: .destructive) {
+                        deleteAllData()
+                    }
                 }
 
                 // About Section
@@ -136,18 +140,22 @@ struct SettingsView: View {
     }
 
     private func clearCache() {
-        // Clear URL cache
         URLCache.shared.removeAllCachedResponses()
-
-        // Clear image cache
-        // Note: AsyncImage uses its own cache, no direct API to clear
-
-        print("Cache cleared")
+        let tmp = FileManager.default.temporaryDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil) {
+            for f in files where f.lastPathComponent.hasSuffix(".m4a") || f.lastPathComponent.hasSuffix(".wav") {
+                try? FileManager.default.removeItem(at: f)
+            }
+        }
     }
 
     private func clearSearchHistory() {
-        // This would need to be implemented in LibraryManager
-        print("Search history cleared")
+        LibraryManager.shared.clearSearchHistoryData()
+    }
+
+    private func deleteAllData() {
+        LibraryManager.shared.deleteAllData()
+        authManager.signOut()
     }
 }
 

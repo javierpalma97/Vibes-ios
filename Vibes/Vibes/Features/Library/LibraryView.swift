@@ -364,10 +364,12 @@ struct LibraryView: View {
                 try await libraryManager.syncLibrary()
             } catch InnerTubeError.authenticationExpired {
                 await MainActor.run {
-                    authManager.signOut()
-                    syncError = "Your session has expired. Please sign in again to sync your library."
+                    // No hacer signOut automático – deja que el usuario decida, solo muestra error con detalle
+                    DebugLogger.shared.log("❌ sync authExpired \(InnerTubeClient.shared.debugAuthState)")
+                    syncError = "Sync authExpired – no se cierra sesión. Revisa DebugLog. \(InnerTubeClient.shared.debugAuthState)"
                     showSyncError = true
                 }
+                print("❌ [LibraryView] sync authExpired \(InnerTubeClient.shared.debugAuthState)")
             } catch InnerTubeError.notAuthenticated {
                 await MainActor.run {
                     syncError = "Please sign in to sync your library."
