@@ -6,6 +6,7 @@ struct OAuthView: View {
     @State private var device: OAuthManager.DeviceCodeResponse?
     @State private var isPolling = false
     @State private var error: String?
+    @State private var showImporter = false
 
     var body: some View {
         NavigationStack {
@@ -43,6 +44,11 @@ struct OAuthView: View {
                         Button("Obtener código") {
                             Task { await start() }
                         }.buttonStyle(.borderedProminent).disabled(isPolling)
+                        Divider().padding(.vertical, 4)
+                        Button("Importar oauth.json (ytmusicapi)") {
+                            showImporter = true
+                        }.font(.caption)
+                        Text("En PC: pip install ytmusicapi && ytmusicapi oauth → oauth.json → AirDrop aquí").font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
                     }.padding()
                 }
                 Spacer()
@@ -54,6 +60,23 @@ struct OAuthView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
             .task { if device == nil && !oauth.isAuthenticated { await start() } }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    Task {
+                        do {
+                            let data = try Data(contentsOf: url)
+                            try await OAuthManager.shared.importOAuthJson(data: data)
+                            dismiss()
+                        } catch {
+                            error = error.localizedDescription
+                            DebugLogger.shared.log("❌ OAuth import \(error.localizedDescription)")
+                        }
+                    }
+                case .failure(let e): error = e.localizedDescription
+                }
+            }
         }
     }
 

@@ -65,6 +65,22 @@ class OAuthManager: ObservableObject {
         DebugLogger.shared.log("🔐 OAuth signOut")
     }
 
+    // Import ytmusicapi oauth.json (tiene access_token, refresh_token, scope, token_type)
+    @MainActor func importOAuthJson(data: Data) throws {
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        // ytmusicapi guarda {access_token, refresh_token, expires_in, ...} o a veces {token: {access_token...}}
+        var at: String? = json?["access_token"] as? String ?? json?["accessToken"] as? String
+        var rt: String? = json?["refresh_token"] as? String ?? json?["refreshToken"] as? String
+        var exp: Int? = json?["expires_in"] as? Int ?? json?["expiresIn"] as? Int
+        // fallback: si el json es { "token": "ya29..." }
+        if at == nil, let token = json?["token"] as? String { at = token }
+        if at == nil { throw OAuthError.requestFailed("oauth.json sin access_token") }
+        // ytmusicapi a veces guarda el token en plain sin refresh, asumimos 1h
+        if exp == nil { exp = 3600 }
+        save(access: at, refresh: rt, expiresIn: exp)
+        DebugLogger.shared.log("✅ OAuth import \(at!.prefix(10)) rt=\(rt != nil) exp=\(exp!)")
+    }
+
     var bearerHeader: String? {
         guard let t = accessToken, !t.isEmpty else { return nil }
         // Si expira en <60s, intenta refresh sincrónico (no bloqueante, el caller puede reintentar)
