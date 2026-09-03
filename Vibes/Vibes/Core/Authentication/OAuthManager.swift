@@ -15,6 +15,15 @@ class OAuthManager: ObservableObject {
     @Published var refreshToken: String?
     @Published var expiresAt: Date?
 
+    // Helpers no-MainActor para InnerTubeClient (evita Swift 6 isolation errors)
+    nonisolated static var isAuthenticatedSync: Bool {
+        UserDefaults.standard.string(forKey: "yt_oauth_access_token") != nil
+    }
+    nonisolated static var bearerHeaderSync: String? {
+        guard let t = UserDefaults.standard.string(forKey: "yt_oauth_access_token"), !t.isEmpty else { return nil }
+        return "Bearer \(t)"
+    }
+
     private let clientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com"
     private let clientSecret = "SBOF_AhyTmVEnBP3WA3A_QQp"
     private let scope = "https://www.googleapis.com/auth/youtube"
