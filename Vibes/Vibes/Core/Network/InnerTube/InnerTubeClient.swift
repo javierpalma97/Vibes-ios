@@ -304,8 +304,9 @@ class InnerTubeClient {
         }()
         let effectiveIsAuth = !forceNoAuth && isAuthenticated
         // OAuth2 Bearer tiene prioridad sobre SAPISIDHASH (MusicBot #1670 / youtube-source#33)
-        // Si forceNoAuth, tampoco mandamos Bearer
-        if !forceNoAuth, let bearer = OAuthManager.bearerHeaderSync {
+        // PERO igual que cookies: nunca para player ANDROID/IOS (esos van sin auth y con 403 si llevan Bearer).
+        // Tu log: oauth player android/ios/webRemix Bearer → luego 403/400. Player debe ser android sin Bearer.
+        if !forceNoAuth, shouldSendAuth, let bearer = OAuthManager.bearerHeaderSync {
             request.setValue(bearer, forHTTPHeaderField: "Authorization")
             // Para OAuth, no mandamos Cookie SAPISIDHASH, solo Bearer + visitorData
             Task { @MainActor in DebugLogger.shared.log("🔑 oauth \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))") }
@@ -419,6 +420,30 @@ class InnerTubeClient {
         } catch {
             throw InnerTubeError.decodingError(error)
         }
+    }
+
+    /// Raw dict para parseo genérico (TV devuelve shapes no modelados → contents nil → invalidResponse).
+    func makeRawRequest(
+        endpoint: String,
+        body: [String: Any],
+        clientType: InnerTubeClientType = .webRemix,
+        forceNoAuth: Bool = false
+    ) async throws -> [String: Any] {
+        guard let request = buildRequest(endpoint: endpoint, body: body, clientType: clientType, forceNoAuth: forceNoAuth) else {
+            throw InnerTubeError.invalidRequest
+        }
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if (code == 401 || code == 403) && !forceNoAuth && (isAuthenticated || OAuthManager.isAuthenticatedSync) {
+                throw InnerTubeError.authenticationExpired
+            }
+            throw InnerTubeError.httpError(statusCode: code)
+        }
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw InnerTubeError.decodingError(NSError(domain: "raw", code: -1))
+        }
+        return dict
     }
 
     /// Make a continuation request (for paginated content)

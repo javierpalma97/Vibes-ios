@@ -658,6 +658,125 @@ class YouTubeMusic {
         throw lastErr
     }
 
+    /// Raw auth (TV primero) para parseo genérico cuando el modelo tipado no cubre el shape TV.
+    /// Tu log: browseAuth VLLM/FEmusic_liked_playlists OK via tv (200) pero getLikedSongs invalidResponse = contents nil.
+    func browseRawAuthenticated(browseId: String) async throws -> [String: Any] {
+        let body: [String: Any] = ["browseId": browseId]
+        var lastErr: Error = InnerTubeError.authenticationExpired
+        for ctype in [InnerTubeClientType.tv, .ios, .webRemix] as [InnerTubeClientType] {
+            do {
+                if Task.isCancelled { throw CancellationError() }
+                let dict = try await client.makeRawRequest(endpoint: "browse", body: body, clientType: ctype, forceNoAuth: false)
+                await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6))") }
+                return dict
+            } catch let e as URLError where e.code == .cancelled {
+                throw e
+            } catch {
+                if (error as NSError).code == -999 { throw error }
+                lastErr = error
+                continue
+            }
+        }
+        throw lastErr
+    }
+
+    // MARK: - Raw JSON helpers (recorrido genérico, independiente del shape TV/WEB/IOS)
+
+    private func rawTexts(_ node: Any?) -> [String] {
+        guard let d = node as? [String: Any] else { return [] }
+        if let runs = d["runs"] as? [[String: Any]] {
+            return runs.compactMap { $0["text"] as? String }
+        }
+        if let s = d["simpleText"] as? String { return [s] }
+        return []
+    }
+
+    private func rawThumb(_ node: Any?) -> String? {
+        guard let d = node as? [String: Any] else { return nil }
+        // musicThumbnailRenderer.thumbnail.thumbnails[].url  o thumbnail.thumbnails[].url
+        let lists: [[String: Any]] = [
+            ((d["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]] ?? [],
+            (d["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]] ?? [],
+            d["thumbnails"] as? [[String: Any]] ?? []
+        ].flatMap { $0 }
+        return (lists.last?["url"] as? String) ?? (lists.first?["url"] as? String)
+    }
+
+    private func walk(_ node: Any, visit: ([String: Any]) -> Void) {
+        if let d = node as? [String: Any] {
+            visit(d)
+            for v in d.values { walk(v, visit: visit) }
+        } else if let a = node as? [Any] {
+            for v in a { walk(v, visit: visit) }
+        }
+    }
+
+    /// Extrae playlists (browseId VL*/PL* + título) de cualquier shape TV/WEB.
+    private func rawPlaylists(_ root: [String: Any]) -> [YTPlaylist] {
+        var out: [YTPlaylist] = []
+        var seen = Set<String>()
+        walk(root) { d in
+            // musicTwoRowItemRenderer con browseEndpoint
+            guard let nav = d["navigationEndpoint"] as? [String: Any],
+                  let be = nav["browseEndpoint"] as? [String: Any],
+                  let bid = be["browseId"] as? String else { return }
+            // Solo playlists: VLxxxx o PLxxxx (evita artistas UCxxxx / álbumes MPREb)
+            guard bid.hasPrefix("VL") || bid.hasPrefix("PL") else { return }
+            // Título
+            let title = rawTexts(d["title"]).joined()
+            guard !title.isEmpty else { return }
+            let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+            guard !seen.contains(pid) else { return }
+            seen.insert(pid)
+            let subtitle = rawTexts(d["subtitle"]).joined(separator: " ")
+            let thumb = rawThumb(d["thumbnailRenderer"]) ?? rawThumb(d["thumbnail"])
+            // songCount del subtitle si viene ("12 songs")
+            var count = 0
+            for tok in subtitle.components(separatedBy: " ") {
+                if let n = Int(tok) { count = n; break }
+            }
+            out.append(YTPlaylist(id: pid, name: title, author: subtitle.isEmpty ? nil : subtitle, thumbnailUrl: thumb, songCount: count, playlistId: nil))
+        }
+        return out
+    }
+
+    /// Extrae canciones (videoId + título) de cualquier shape TV/WEB.
+    private func rawSongs(_ root: [String: Any]) -> [YTSong] {
+        var out: [YTSong] = []
+        var seen = Set<String>()
+        walk(root) { d in
+            var vid: String?
+            // overlay.playNavigationEndpoint.watchEndpoint.videoId
+            if let ov = ((d["overlay"] as? [String: Any])?["musicItemThumbnailOverlayRenderer"] as? [String: Any])?["content"] as? [String: Any],
+               let pb = ov["musicPlayButtonRenderer"] as? [String: Any],
+               let pne = pb["playNavigationEndpoint"] as? [String: Any],
+               let we = pne["watchEndpoint"] as? [String: Any],
+               let v = we["videoId"] as? String { vid = v }
+            // playlistItemData.videoId
+            if vid == nil, let pid = d["playlistItemData"] as? [String: Any], let v = pid["videoId"] as? String { vid = v }
+            // navigationEndpoint.watchEndpoint.videoId
+            if vid == nil, let nav = d["navigationEndpoint"] as? [String: Any], let we = nav["watchEndpoint"] as? [String: Any], let v = we["videoId"] as? String { vid = v }
+            guard let v = vid, !seen.contains(v) else { return }
+            // Título en flexColumns[0] o title.runs
+            var title = ""
+            if let flex = d["flexColumns"] as? [[String: Any]], let first = flex.first,
+               let r = first["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any] {
+                title = rawTexts(r["text"]).joined()
+            }
+            if title.isEmpty { title = rawTexts(d["title"]).joined() }
+            guard !title.isEmpty else { return }
+            seen.insert(v)
+            var artists = ""
+            if let flex = d["flexColumns"] as? [[String: Any]], flex.count > 1,
+               let r = flex[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any] {
+                artists = rawTexts(r["text"]).joined()
+            }
+            let thumb = rawThumb(d["thumbnail"])
+            out.append(YTSong(id: v, title: title, artists: artists, duration: nil, thumbnailUrl: thumb, albumId: nil, albumName: nil))
+        }
+        return out
+    }
+
     func getAlbum(browseId: String) async throws -> (YTAlbum, [YTSong]) {
         let response = try await browse(browseId: browseId)
 
@@ -1058,6 +1177,21 @@ class YouTubeMusic {
             title = visualHeader.title?.combined ?? ""
             thumbnailUrl = visualHeader.foregroundThumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.last?.url
         } else {
+            // TV shape no modelado (tu log: browseAuth VLLM OK via tv pero invalidResponse).
+            // Fallback raw genérico antes de tirar.
+            if client.isAuthenticated {
+                do {
+                    let raw = try await browseRawAuthenticated(browseId: browseId)
+                    let rawList = rawSongs(raw)
+                    await MainActor.run { DebugLogger.shared.log("📀 raw fallback \(browseId) songs=\(rawList.count)") }
+                    if !rawList.isEmpty {
+                        let pl = YTPlaylist(id: browseId, name: browseId, author: nil, thumbnailUrl: nil, songCount: rawList.count, playlistId: nil)
+                        return (pl, rawList)
+                    }
+                } catch {
+                    await MainActor.run { DebugLogger.shared.log("❌ raw fallback \(browseId) \(error)") }
+                }
+            }
             throw InnerTubeError.invalidResponse
         }
 
@@ -1089,7 +1223,7 @@ class YouTubeMusic {
 
         // Ensure songs have thumbnail (use playlist thumbnail as fallback if needed)
         let playlistThumbnail = playlist.thumbnailUrl
-        let songsWithThumbnails = songs.map { song in
+        var songsWithThumbnails = songs.map { song in
             if song.thumbnailUrl != nil && !song.thumbnailUrl!.isEmpty {
                 return song
             } else {
@@ -1104,7 +1238,23 @@ class YouTubeMusic {
                 )
             }
         }
-        
+
+        // Si tipado da 0 pero hay sesión (TV shape), prueba raw genérico (tu VLLM OK via tv → 0 songs).
+        if songsWithThumbnails.isEmpty && client.isAuthenticated {
+            do {
+                let raw = try await browseRawAuthenticated(browseId: browseId)
+                let rawList = rawSongs(raw)
+                await MainActor.run { DebugLogger.shared.log("📀 raw fallback2 \(browseId) songs=\(rawList.count)") }
+                if !rawList.isEmpty {
+                    songsWithThumbnails = rawList.map { s in
+                        YTSong(id: s.id, title: s.title, artists: s.artists, duration: s.duration, thumbnailUrl: s.thumbnailUrl ?? playlistThumbnail, albumId: s.albumId, albumName: s.albumName)
+                    }
+                }
+            } catch {
+                await MainActor.run { DebugLogger.shared.log("❌ raw fallback2 \(browseId) \(error)") }
+            }
+        }
+
         return (playlist, songsWithThumbnails)
     }
 
@@ -1797,7 +1947,18 @@ class YouTubeMusic {
             }
         }
 
-        await MainActor.run { DebugLogger.shared.log("📚 parsed \(playlists.count) playlists") }
+        await MainActor.run { DebugLogger.shared.log("📚 parsed \(playlists.count) playlists (tipado)") }
+        if !playlists.isEmpty { return playlists }
+        // Fallback raw: TV devuelve 200 pero con shape no modelado → contents nil → 0 listas.
+        // Tu log: browseAuth FEmusic_liked_playlists OK via tv pero parsed 0.
+        do {
+            let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_playlists")
+            let rawLists = rawPlaylists(raw)
+            await MainActor.run { DebugLogger.shared.log("📚 raw parsed \(rawLists.count) playlists") }
+            if !rawLists.isEmpty { return rawLists }
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ raw FEmusic_liked_playlists \(error)") }
+        }
         return playlists
     }
 
