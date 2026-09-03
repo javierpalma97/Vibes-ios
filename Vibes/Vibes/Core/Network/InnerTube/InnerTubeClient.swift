@@ -131,6 +131,8 @@ class InnerTubeClient {
         return cookies != nil && !(cookies?.isEmpty ?? true)
     }
 
+    var currentCookies: String? { cookies }
+
     var debugAuthState: String {
         let oauth = OAuthManager.bearerHeaderSync != nil ? "oauth=\(OAuthManager.bearerHeaderSync!.prefix(10))" : "oauth=nil"
         return "cookies=\(cookies != nil ? "\(cookies!.prefix(20))..." : "nil") visitorData=\(visitorData?.prefix(20) ?? "nil") dataSyncId=\(dataSyncId?.prefix(20) ?? "nil") mapSAPISID=\(cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil) \(oauth)"
