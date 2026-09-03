@@ -293,12 +293,10 @@ class YouTubeMusic {
         // - WEB clients now often need poToken and fail with UNPLAYABLE, so deprioritized
         var clients: [InnerTubeClientType] = []
         if client.isAuthenticated {
-            // When logged in, try authenticated music client first (handles age-restricted + premium)
-            // ANDROID is prioritized over IOS because IOS throttles after 400KB (see DownloadManager chunk tests)
-            clients.append(.androidMusic)
-            clients.append(contentsOf: [.android, .ios, .tvEmbedded, .webRemix, .web])
+            // SAPISIDHASH solo válido con WEB_REMIX (diagnóstico 401: ANDROID_MUSIC + SAPISID → 401). Para streaming logueado usa WEB_REMIX con Cookie.
+            clients.append(contentsOf: [.webRemix, .androidMusic, .android, .ios, .tvEmbedded, .web])
         } else {
-            // Unauthenticated: ANDROID allows full 1.7MB download with 200k chunks, IOS throttles after 400KB
+            // Unauthenticated: ANDROID permite 1.7M con 200k, IOS throttlea
             clients.append(contentsOf: [.android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
         }
 
