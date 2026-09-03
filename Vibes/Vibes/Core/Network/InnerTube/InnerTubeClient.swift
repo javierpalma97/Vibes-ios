@@ -291,7 +291,15 @@ class InnerTubeClient {
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
             if let sapisidHash = generateSAPISIDHASH() {
                 request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
+                Task { @MainActor in DebugLogger.shared.log("🔑 auth \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))") }
+                print("🔑 [Auth] \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))")
+            } else {
+                Task { @MainActor in DebugLogger.shared.log("⚠️ no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))") }
+                print("⚠️ [Auth] no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))")
             }
+        } else if isAuthenticated && endpoint != "player" {
+            Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(isAuthenticated)") }
+            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType)")
         }
 
         // Build request body with context
