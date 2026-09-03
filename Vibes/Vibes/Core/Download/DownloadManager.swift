@@ -176,23 +176,44 @@ class DownloadManager: NSObject, ObservableObject {
 
         var currentURL = url
         var urlRefreshes = 0
+        let maxRefreshes = 15
+        // Refresco proactivo cada 800KB: cada URL sirve ~1MB por rangos
+        let segmentSize: Int64 = 800_000
+        var segmentStart: Int64 = 0
         while offset < totalLength {
             // Check for cancellation
             if Task.isCancelled { throw DownloadError.downloadFailed }
+
+            if totalWritten - segmentStart >= segmentSize && urlRefreshes < maxRefreshes {
+                do {
+                    let (freshUrl, _, freshClient) = try await ytMusic.getStreamUrlForDownload(videoId: songId)
+                    guard let fresh = URL(string: freshUrl) else { throw DownloadError.invalidURL }
+                    currentURL = fresh
+                    clientType = freshClient
+                    segmentStart = totalWritten
+                    rn = 0
+                    urlRefreshes += 1
+                    print("🔄 [Download] URL fresca proactiva (\(urlRefreshes)) en offset \(offset)")
+                } catch {
+                    print("⚠️ [Download] no se pudo refrescar URL, sigo con la actual: \(error)")
+                }
+            }
 
             let end = min(offset + chunkSize - 1, totalLength - 1)
             let chunkData: Data
             let chunkTotal: Int64?
             do {
                 (chunkData, chunkTotal) = try await fetchChunk(url: currentURL, clientType: clientType, start: offset, end: end, rn: rn); rn += 1
-            } catch DownloadError.forbidden where urlRefreshes < 3 {
+            } catch DownloadError.forbidden where urlRefreshes < maxRefreshes {
                 // Cuota de la URL agotada (~1MB): pedir URL fresca y reanudar mismo offset
                 urlRefreshes += 1
-                print("⚠️ [Download] 403 en offset \(offset), pidiendo URL fresca (\(urlRefreshes)/3)...")
+                print("⚠️ [Download] 403 en offset \(offset), pidiendo URL fresca (\(urlRefreshes)/\(maxRefreshes))...")
                 let (freshUrl, _, freshClient) = try await ytMusic.getStreamUrlForDownload(videoId: songId)
                 guard let fresh = URL(string: freshUrl) else { throw DownloadError.invalidURL }
                 currentURL = fresh
                 clientType = freshClient
+                segmentStart = totalWritten
+                rn = 0
                 continue
             }
             // If server gave us total via Content-Range and we hadn't known it, update

@@ -283,6 +283,9 @@ class PlayerManager: NSObject, ObservableObject {
                 }
                 let asset = AVURLAsset(url: customURL)
                 let loader = CustomResourceLoader(userAgent: InnerTubeClient.shared.getUserAgent(for: clientType))
+                // Cada URL de googlevideo sirve ~1MB: el loader pide frescas y reanuda offset
+                let refreshId = song.id
+                loader.streamUrlProvider = { try await YouTubeMusic.shared.getStreamUrl(videoId: refreshId).url }
                 asset.resourceLoader.setDelegate(loader, queue: DispatchQueue(label: "vibes.resourceLoader"))
                 self.resourceLoader = loader
                 newPlayerItem = AVPlayerItem(asset: asset)

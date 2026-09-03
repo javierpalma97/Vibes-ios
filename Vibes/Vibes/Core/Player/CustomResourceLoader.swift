@@ -5,11 +5,16 @@ import CommonCrypto
 class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let userAgent: String
 
+    /// Proveedor de URL fresca de streaming (PlayerManager lo inyecta con el videoId).
+    /// Cada URL de googlevideo sirve ~1MB por rangos; al agotarse se pide otra y se
+    /// reanuda en el mismo offset: el 403 persistente deja de ser terminal.
+    var streamUrlProvider: (() async throws -> String)?
+
     private static let queue = DispatchQueue(label: "vibes.resourceLoader", qos: .userInitiated)
     private static var activeDownloads: [String: DownloadSession] = [:]
 
     private class DownloadSession {
-        let url: URL
+        var url: URL
         let tempFile: URL
         var totalSize: Int64 = 0
         var downloadedSize: Int64 = 0
@@ -142,12 +147,28 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     private func performDownload(_ session: DownloadSession) async {
         let chunkSize = 200_000
+        // Cada URL sirve ~1MB por rangos: refresco proactivo a 800KB con margen,
+        // antes de que googlevideo empiece a 403.
+        let segmentSize = 800_000
+        let maxSegments = 15 // cubre ~12MB, de sobra para audio
         var offset = 0
         // googlevideo exige `rn` (request number) incremental en fetches por rangos:
         // sin él, tras N peticiones responde 403. ExoPlayer lo envía siempre.
         var rn = 0
+        var segmentStart = 0
+        var segments = 0
 
         while !Task.isCancelled {
+            if offset - segmentStart >= segmentSize, segments < maxSegments,
+               let provider = streamUrlProvider, let fresh = try? await provider(),
+               let freshURL = URL(string: fresh) {
+                session.url = freshURL
+                segmentStart = offset
+                rn = 0
+                segments += 1
+                session.consecutive403 = 0
+                await MainActor.run { DebugLogger.shared.log("🔄 stream URL fresca proactiva seg=\(segments) offset=\(offset)") }
+            }
             let end = offset + chunkSize - 1
             let reqURL = urlWithRn(session.url, rn); rn += 1
             var request = URLRequest(url: reqURL)
@@ -170,15 +191,24 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                             let preview = String(data: data.prefix(300), encoding: .utf8) ?? "<binario>"
                             await MainActor.run { DebugLogger.shared.log("⚠️ stream 403 body=\(preview.prefix(200))") }
                         }
-                        // La cuota por URL de googlevideo se agota (~1MB): reintentar la MISMA
-                        // URL es inútil. Se reintenta 3 veces por si es transitorio y luego se
-                        // falla la sesión para que PlayerManager pida una URL fresca (ya lo hace
-                        // en su retry: playSong → getStreamUrl de nuevo).
+                        // Reactivo: la cuota es por URL → pedir fresca y reanudar mismo offset.
+                        // Solo si no hay provider (streaming sin videoId) se cuenta para fallar.
+                        if segments < maxSegments,
+                           let provider = streamUrlProvider, let fresh = try? await provider(),
+                           let freshURL = URL(string: fresh) {
+                            session.url = freshURL
+                            segmentStart = offset
+                            rn = 0
+                            segments += 1
+                            session.consecutive403 = 0
+                            await MainActor.run { DebugLogger.shared.log("🔄 stream URL fresca reactiva seg=\(segments) offset=\(offset)") }
+                            continue
+                        }
                         session.consecutive403 += 1
                         await MainActor.run { DebugLogger.shared.log("⚠️ stream 403 at \(offset)/\(session.totalSize) rn=\(rn - 1) intento \(session.consecutive403)/3") }
                         if session.consecutive403 >= 3 {
                             session.error = NSError(domain: "CustomResourceLoader", code: 403,
-                                userInfo: [NSLocalizedDescriptionKey: "googlevideo 403 persistente en offset \(offset): URL agotada, pedir fresca"])
+                                userInfo: [NSLocalizedDescriptionKey: "googlevideo 403 persistente en offset \(offset): cuota por URL agotada"])
                             break
                         }
                         try? await Task.sleep(nanoseconds: 500_000_000)

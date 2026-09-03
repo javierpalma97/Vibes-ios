@@ -760,6 +760,7 @@ class YouTubeMusic {
         } else {
             order = [.tv, .webRemix, .androidMusic, .ios]
         }
+        var firstDict: [String: Any]?
         for ctype in order {
             do {
                 if Task.isCancelled { throw CancellationError() }
@@ -768,12 +769,16 @@ class YouTubeMusic {
                 let playlistsFound = rawPlaylists(dict).count
                 await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6)) songs=\(songsFound) playlists=\(playlistsFound)") }
                 if songsFound == 0 && playlistsFound == 0 {
+                    // Vacío (shell TV, sign-in prompt...): probar siguiente cliente en vez
+                    // de devolver vacío. Se guarda el primero por si todos dan vacío.
+                    if firstDict == nil { firstDict = dict }
                     let keys2 = Self.deepKeys(dict, depth: 8)
                     await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) deepKeys=\(keys2.prefix(40))") }
                     if let data = try? JSONSerialization.data(withJSONObject: dict),
                        let sample = String(data: data, encoding: .utf8) {
                         await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) sample=\(sample.prefix(1500))") }
                     }
+                    continue
                 }
                 return dict
             } catch let e as URLError where e.code == .cancelled {
@@ -784,6 +789,8 @@ class YouTubeMusic {
                 continue
             }
         }
+        // Todos vacíos o con error: devolver el primero (mismo comportamiento que antes)
+        if let first = firstDict { return first }
         throw lastErr
     }
 
@@ -1122,7 +1129,17 @@ class YouTubeMusic {
         let response: BrowseResponse
         if client.isAuthenticated {
             do {
-                response = try await browseAuthenticated(browseId: browseId)
+                let ar = try await browseAuthenticated(browseId: browseId)
+                // Shell TV (Bearer en playlist pública): HTTP 200 sin contenido parseable
+                // (ni header, ni twoColumn, ni singleColumn). Tratar como fallo para caer
+                // al browse público en vez de devolver lista vacía / invalidResponse.
+                if ar.header == nil && ar.contents?.twoColumnBrowseResultsRenderer == nil
+                    && ar.contents?.singleColumnBrowseResultsRenderer == nil
+                    && ar.contents?.sectionListRenderer == nil {
+                    await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) shell authed sin contenido, probando público") }
+                    throw InnerTubeError.invalidResponse
+                }
+                response = ar
             } catch {
                 await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) auth falló (\(error)), probando público") }
                 response = try await browse(browseId: browseId)
@@ -1937,6 +1954,9 @@ class YouTubeMusic {
             )
             return resp
         } catch {
+            // Cancelación de SwiftUI (.task re-ejecutado): no hacer fallback, solo propagar
+            if error is CancellationError || (error as NSError).code == -999
+                || (error as? URLError)?.code == .cancelled { throw error }
             await MainActor.run { DebugLogger.shared.log("❌ next via \(ctype) err=\(error)") }
             // Fallback público sin auth (radio de contenido público no necesita login)
             if client.hasBearer {
