@@ -55,6 +55,8 @@ class OAuthManager: ObservableObject {
         isAuthenticated = accessToken != nil && !(accessToken?.isEmpty ?? true)
         DebugLogger.shared.log("🔐 OAuth save isAuth=\(isAuthenticated) access=\(access?.prefix(20) ?? "nil")...")
         print("🔐 [OAuth] save isAuth=\(isAuthenticated)")
+        NotificationCenter.default.post(name: NSNotification.Name("OAuthAuthChanged"), object: nil)
+        Task { @MainActor in AuthenticationManager.shared.refreshAuthState() }
     }
 
     func signOut() {
@@ -63,6 +65,7 @@ class OAuthManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: kExpiry)
         accessToken = nil; refreshToken = nil; expiresAt = nil; isAuthenticated = false
         DebugLogger.shared.log("🔐 OAuth signOut")
+        NotificationCenter.default.post(name: NSNotification.Name("OAuthAuthChanged"), object: nil)
     }
 
     // Import ytmusicapi oauth.json (tiene access_token, refresh_token, scope, token_type)

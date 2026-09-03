@@ -592,14 +592,20 @@ class YouTubeMusic {
             "browseId": browseId
         ]
 
-        // Multi-método en 1 build: prueba IOS auth → WEB_REMIX auth → IOS noauth → WEB_REMIX noauth.
-        // Tu log muestra WEB_REMIX+SAPISID → 401 sistemático, IOS a veces pasa; y sin auth todo va.
+        // Contenido público: si hay Bearer OAuth, los intentos con auth dan 400 (Bearer no vale para IOS/WEB_REMIX).
+        // Tu log: Bearer+ios/webRemix → 400, noAuth → OK. Por eso para público se prueba noAuth primero si hay Bearer.
+        // Para librería privada se usa browseAuthenticated() aparte (sin fallback público).
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
         let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
-            ? [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true), (.android, true)]
+            ? (hasBearer
+                ? [(.ios, true), (.webRemix, true), (.android, true), (.ios, false), (.webRemix, false)]
+                : [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true), (.android, true)])
             : [(.webRemix, false)]
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
             do {
+                // -999 cancelled = vista cerrada, no seguir probando (evita cascada de 5 logs)
+                if Task.isCancelled { throw CancellationError() }
                 await MainActor.run { DebugLogger.shared.log("📚 browse \(browseId) try \(ctype) forceNoAuth=\(noAuth)") }
                 let resp: BrowseResponse = try await client.makeRequest(
                     endpoint: "browse",
@@ -610,10 +616,42 @@ class YouTubeMusic {
                 )
                 await MainActor.run { DebugLogger.shared.log("📚 browse \(browseId) OK via \(ctype) noAuth=\(noAuth)") }
                 return resp
+            } catch let e as URLError where e.code == .cancelled {
+                throw e
             } catch {
+                // NSURLError -999 también es cancelación de SwiftUI (.task re-ejecutado)
+                if (error as NSError).code == -999 { throw error }
                 lastErr = error
                 await MainActor.run { DebugLogger.shared.log("❌ browse \(browseId) via \(ctype) noAuth=\(noAuth) err=\(error)") }
-                // Si es 401/auth, prueba siguiente; si es otro error, también prueba siguiente
+                continue
+            }
+        }
+        throw lastErr
+    }
+
+    /// Browse solo-autenticado para librería privada (VLLM, FEmusic_liked_playlists, historial).
+    /// NO hace fallback a noAuth: si todo falla, lanza para que Sync muestre error real en vez de lista vacía.
+    /// Orden: TV+Bearer (YouTube.js: OAuth solo vale con TV) → IOS+Bearer/cookies → WEB_REMIX+Bearer/cookies.
+    func browseAuthenticated(browseId: String) async throws -> BrowseResponse {
+        let body: [String: Any] = ["browseId": browseId]
+        let attempts: [(InnerTubeClientType, Bool)] = [(.tv, false), (.ios, false), (.webRemix, false)]
+        var lastErr: Error = InnerTubeError.authenticationExpired
+        for (ctype, noAuth) in attempts {
+            do {
+                if Task.isCancelled { throw CancellationError() }
+                await MainActor.run { DebugLogger.shared.log("📚 browseAuth \(browseId) try \(ctype)") }
+                let resp: BrowseResponse = try await client.makeRequest(
+                    endpoint: "browse", body: body, clientType: ctype,
+                    forceNoAuth: noAuth, responseType: BrowseResponse.self
+                )
+                await MainActor.run { DebugLogger.shared.log("📚 browseAuth \(browseId) OK via \(ctype)") }
+                return resp
+            } catch let e as URLError where e.code == .cancelled {
+                throw e
+            } catch {
+                if (error as NSError).code == -999 { throw error }
+                lastErr = error
+                await MainActor.run { DebugLogger.shared.log("❌ browseAuth \(browseId) via \(ctype) err=\(error)") }
                 continue
             }
         }
@@ -800,7 +838,19 @@ class YouTubeMusic {
     }
 
     func getPlaylist(browseId: String) async throws -> (YTPlaylist, [YTSong]) {
-        let response = try await browse(browseId: browseId)
+        // Si hay sesión, primero prueba autenticado (TV/IOS/WEB_REMIX con Bearer/cookies) para listas privadas (VLLM).
+        // Si falla, cae a browse público para listas públicas.
+        let response: BrowseResponse
+        if client.isAuthenticated {
+            do {
+                response = try await browseAuthenticated(browseId: browseId)
+            } catch {
+                await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) auth falló (\(error)), probando público") }
+                response = try await browse(browseId: browseId)
+            }
+        } else {
+            response = try await browse(browseId: browseId)
+        }
 
         // Check for auth errors (when authenticated but cookies expired, YouTube returns sign-in prompt)
         if let sections = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents {
@@ -1079,7 +1129,7 @@ class YouTubeMusic {
         return parseHomePage(response)
     }
 
-    /// Browse with optional params support
+    /// Browse with optional params support (contenido público: noAuth primero si hay Bearer)
     func browseWithParams(browseId: String, params: String? = nil) async throws -> BrowseResponse {
         var body: [String: Any] = [
             "browseId": browseId
@@ -1089,12 +1139,16 @@ class YouTubeMusic {
             body["params"] = params
         }
 
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
         let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
-            ? [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true)]
+            ? (hasBearer
+                ? [(.ios, true), (.webRemix, true), (.android, true), (.ios, false), (.webRemix, false)]
+                : [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true)])
             : [(.webRemix, false)]
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
             do {
+                if Task.isCancelled { throw CancellationError() }
                 return try await client.makeRequest(
                     endpoint: "browse",
                     body: body,
@@ -1102,7 +1156,10 @@ class YouTubeMusic {
                     forceNoAuth: noAuth,
                     responseType: BrowseResponse.self
                 )
+            } catch let e as URLError where e.code == .cancelled {
+                throw e
             } catch {
+                if (error as NSError).code == -999 { throw error }
                 lastErr = error
                 continue
             }
@@ -1631,7 +1688,8 @@ class YouTubeMusic {
         await MainActor.run { DebugLogger.shared.log("📚 getLibraryPlaylists isAuth=\(client.isAuthenticated) \(client.debugAuthState)") }
         let response: BrowseResponse
         do {
-            response = try await browse(browseId: "FEmusic_liked_playlists")
+            // Librería privada: SIN fallback público (si no, devuelve 0 listas vacías)
+            response = try await browseAuthenticated(browseId: "FEmusic_liked_playlists")
             await MainActor.run { DebugLogger.shared.log("📚 browse FEmusic_liked_playlists OK") }
         } catch {
             await MainActor.run { DebugLogger.shared.log("❌ browse FEmusic_liked_playlists \(error) \(client.debugAuthState)") }
@@ -1800,7 +1858,7 @@ class YouTubeMusic {
             throw InnerTubeError.notAuthenticated
         }
 
-        let response = try await browse(browseId: "FEmusic_history")
+        let response = try await browseAuthenticated(browseId: "FEmusic_history")
         return parseHistoryPage(response)
     }
 
@@ -1907,7 +1965,7 @@ class YouTubeMusic {
             throw InnerTubeError.notAuthenticated
         }
 
-        let response = try await browse(browseId: "FEmusic_liked_playlists")
+        let response = try await browseAuthenticated(browseId: "FEmusic_liked_playlists")
         return parseAccountPlaylists(response)
     }
 

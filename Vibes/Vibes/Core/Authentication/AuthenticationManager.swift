@@ -13,19 +13,31 @@ class AuthenticationManager: ObservableObject {
 
     private let innerTube = InnerTubeClient.shared
 
+    private var cancellables = Set<AnyCancellable>()
+
     private init() {
         loadAuthState()
+        // OAuth login debe reflejarse en UI aunque no haya cookies (tu log: oauth ok pero sale como guest)
+        NotificationCenter.default.publisher(for: NSNotification.Name("OAuthAuthChanged"))
+            .sink { [weak self] _ in self?.refreshAuthState() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Authentication State
 
     private func loadAuthState() {
+        refreshAuthState()
+    }
+
+    func refreshAuthState() {
         isAuthenticated = innerTube.isAuthenticated
 
         if isAuthenticated {
-            accountName = UserDefaults.standard.string(forKey: "accountName")
+            accountName = UserDefaults.standard.string(forKey: "accountName") ?? (OAuthManager.isAuthenticatedSync ? "YouTube (OAuth)" : nil)
             accountEmail = UserDefaults.standard.string(forKey: "accountEmail")
             accountImageUrl = UserDefaults.standard.string(forKey: "accountImageUrl")
+        } else {
+            // No limpiar nombre aquí, solo estado
         }
     }
 
@@ -47,6 +59,7 @@ class AuthenticationManager: ObservableObject {
 
     func signOut() {
         innerTube.clearAuthData()
+        OAuthManager.shared.signOut()
 
         accountName = nil
         accountEmail = nil

@@ -3,6 +3,7 @@ import Foundation
 enum InnerTubeClientType: String {
     case webRemix = "WEB_REMIX"
     case web = "WEB"
+    case tv = "TVHTML5"
     case tvEmbedded = "TVHTML5_SIMPLY_EMBEDDED_PLAYER"
     case webCreator = "WEB_CREATOR"
     case ios = "IOS"
@@ -60,6 +61,7 @@ class InnerTubeClient {
         switch clientType {
         case .webRemix: keyName = "WEB_REMIX_API_KEY"
         case .web: keyName = "WEB_API_KEY"
+        case .tv: keyName = "TVHTML5_API_KEY"
         case .tvEmbedded: keyName = "TVHTML5_API_KEY"
         case .webCreator: keyName = "WEB_REMIX_API_KEY"
         case .ios: keyName = "IOS_API_KEY"
@@ -79,6 +81,7 @@ class InnerTubeClient {
         switch clientType {
         case .webRemix: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
         case .web: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3"
+        case .tv: return "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8"
         case .tvEmbedded: return "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8"
         case .webCreator: return "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
         case .ios: return "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
@@ -238,6 +241,9 @@ class InnerTubeClient {
             return ("WEB_REMIX", "1.20250224.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         case .web:
             return ("WEB", "2.20250222.10.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        case .tv:
+            // YouTube.js: OAuth2 solo funciona con cliente TV (LuanRT docs 2026-05-12)
+            return ("TVHTML5", "7.20250224", "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/20.0 TV Safari/537.36")
         case .tvEmbedded:
             return ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", "Mozilla/5.0 (PlayStation 5 12.02) AppleWebKit/605.1.15 (KHTML, like Gecko)")
         case .webCreator:
