@@ -50,6 +50,20 @@ struct SettingsView: View {
                     }
                 }
 
+                // OAuth2 Section (MusicBot #1670)
+                Section(header: Text("YouTube OAuth2")) {
+                    let oauth = OAuthManager.shared
+                    if oauth.isAuthenticated {
+                        Label("OAuth conectado", systemImage: "checkmark.seal.fill").foregroundColor(.green)
+                        Button("Cerrar sesión OAuth", role: .destructive) { oauth.signOut() }
+                    } else {
+                        NavigationLink(destination: OAuthView()) {
+                            Label("Iniciar OAuth2 (TV) – si cookies falla", systemImage: "tv")
+                        }
+                        Text("Usa cuenta burner. No requiere SAPISID.").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
                 // Playback Section
                 Section(header: Text("Playback")) {
                     Picker("Audio Quality", selection: $audioQuality) {

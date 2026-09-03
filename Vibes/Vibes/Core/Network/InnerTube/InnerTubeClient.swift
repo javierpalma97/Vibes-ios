@@ -126,11 +126,14 @@ class InnerTubeClient {
     }
 
     var isAuthenticated: Bool {
+        // Cookie auth o OAuth2 Bearer (MusicBot #1670)
+        if OAuthManager.shared.isAuthenticated { return true }
         return cookies != nil && !(cookies?.isEmpty ?? true)
     }
 
     var debugAuthState: String {
-        "cookies=\(cookies != nil ? "\(cookies!.prefix(20))..." : "nil") visitorData=\(visitorData?.prefix(20) ?? "nil") dataSyncId=\(dataSyncId?.prefix(20) ?? "nil") mapSAPISID=\(cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil)"
+        let oauth = OAuthManager.shared.isAuthenticated ? "oauth=\(OAuthManager.shared.accessToken?.prefix(10) ?? "")" : "oauth=nil"
+        return "cookies=\(cookies != nil ? "\(cookies!.prefix(20))..." : "nil") visitorData=\(visitorData?.prefix(20) ?? "nil") dataSyncId=\(dataSyncId?.prefix(20) ?? "nil") mapSAPISID=\(cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil) \(oauth)"
     }
 
     func getUserAgent(for clientType: InnerTubeClientType) -> String {
@@ -287,7 +290,17 @@ class InnerTubeClient {
             }
             return true
         }()
-        if shouldSendAuth, let cookies = cookies {
+        // OAuth2 Bearer tiene prioridad sobre SAPISIDHASH (MusicBot #1670 / youtube-source#33)
+        if let bearer = OAuthManager.shared.bearerHeader {
+            request.setValue(bearer, forHTTPHeaderField: "Authorization")
+            // Para OAuth, no mandamos Cookie SAPISIDHASH, solo Bearer + visitorData
+            Task { @MainActor in DebugLogger.shared.log("🔑 oauth \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))") }
+            print("🔑 [OAuth] \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))")
+            // Si hay cookies, las mandamos también como fallback pero sin SAPISIDHASH
+            if shouldSendAuth, let cookies = cookies {
+                request.setValue(cookies, forHTTPHeaderField: "Cookie")
+            }
+        } else if shouldSendAuth, let cookies = cookies {
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
             if let sapisidHash = generateSAPISIDHASH() {
                 request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
@@ -298,8 +311,8 @@ class InnerTubeClient {
                 print("⚠️ [Auth] no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))")
             }
         } else if isAuthenticated && endpoint != "player" {
-            Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(isAuthenticated)") }
-            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType)")
+            Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(isAuthenticated) oauth=\(OAuthManager.shared.isAuthenticated)") }
+            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType) oauth=\(OAuthManager.shared.isAuthenticated)")
         }
 
         // Build request body with context
@@ -363,10 +376,11 @@ class InnerTubeClient {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             // Map 401/403 to authenticationExpired when logged in (session expired)
-            if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && isAuthenticated {
+            // Si hay Bearer OAuth, no es expirado de cookie, es falta de scope – no hacer signOut automático
+            if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && (isAuthenticated || OAuthManager.shared.isAuthenticated) {
                 let bodyPreview = String(data: data.prefix(500), encoding: .utf8) ?? ""
-                await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) isAuth=\(self.isAuthenticated) \(self.debugAuthState) body=\(bodyPreview.prefix(200))") }
-                print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(debugAuthState) body=\(bodyPreview.prefix(500))")
+                await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) isAuth=\(self.isAuthenticated) oauth=\(OAuthManager.shared.isAuthenticated) \(self.debugAuthState) body=\(bodyPreview.prefix(200))") }
+                print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(debugAuthState) oauth=\(OAuthManager.shared.isAuthenticated) body=\(bodyPreview.prefix(500))")
                 throw InnerTubeError.authenticationExpired
             }
             throw InnerTubeError.httpError(statusCode: httpResponse.statusCode)

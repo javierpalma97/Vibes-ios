@@ -5,11 +5,13 @@ import AuthenticationServices
 struct LoginView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthenticationManager
+    @StateObject private var oauth = OAuthManager.shared
 
     @State private var isLoading: Bool = true
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var webView: WKWebView?
+    @State private var showOAuth = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +34,21 @@ struct LoginView: View {
                         showError = true
                     }
                 )
+
+                VStack {
+                    Spacer()
+                    // OAuth2 alternativa (MusicBot #1670) – no depende de SAPISID
+                    Button {
+                        showOAuth = true
+                    } label: {
+                        Label(oauth.isAuthenticated ? "OAuth: Conectado" : "Probar login OAuth2 (si cookies falla)", systemImage: "key.fill")
+                            .font(.caption)
+                            .padding(8)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(8)
+                    }
+                    .padding(.bottom, 12)
+                }
 
                 if isLoading {
                     VStack {
@@ -56,6 +73,9 @@ struct LoginView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+            .sheet(isPresented: $showOAuth) {
+                OAuthView()
             }
         }
     }
