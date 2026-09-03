@@ -70,11 +70,11 @@ struct OAuthView: View {
                             try await OAuthManager.shared.importOAuthJson(data: data)
                             dismiss()
                         } catch {
-                            error = error.localizedDescription
+                            self.error = error.localizedDescription
                             DebugLogger.shared.log("❌ OAuth import \(error.localizedDescription)")
                         }
                     }
-                case .failure(let e): error = e.localizedDescription
+                case .failure(let e): self.error = e.localizedDescription
                 }
             }
         }
