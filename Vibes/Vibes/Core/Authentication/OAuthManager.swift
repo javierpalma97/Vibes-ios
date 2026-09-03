@@ -25,7 +25,7 @@ class OAuthManager: ObservableObject {
     }
 
     private let clientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com"
-    private let clientSecret = "SBOF_AhyTmVEnBP3WA3A_QQp"
+    private let clientSecret = "SboVhoG9s0rNafixCSGGKXAT" // pytube/yt-dlp TV public (MusicBot #1670)
     private let scope = "https://www.googleapis.com/auth/youtube"
     private let deviceCodeURL = URL(string: "https://oauth2.googleapis.com/device/code")!
     private let tokenURL = URL(string: "https://oauth2.googleapis.com/token")!
