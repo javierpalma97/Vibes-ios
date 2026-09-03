@@ -1593,7 +1593,15 @@ class YouTubeMusic {
             throw InnerTubeError.notAuthenticated
         }
 
-        let response = try await browse(browseId: "FEmusic_liked_playlists")
+        await MainActor.run { DebugLogger.shared.log("📚 getLibraryPlaylists isAuth=\(client.isAuthenticated) \(client.debugAuthState)") }
+        let response: BrowseResponse
+        do {
+            response = try await browse(browseId: "FEmusic_liked_playlists")
+            await MainActor.run { DebugLogger.shared.log("📚 browse FEmusic_liked_playlists OK") }
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ browse FEmusic_liked_playlists \(error) \(client.debugAuthState)") }
+            throw error
+        }
 
         var playlists: [YTPlaylist] = []
 

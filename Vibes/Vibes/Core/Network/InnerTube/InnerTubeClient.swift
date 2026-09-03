@@ -356,6 +356,9 @@ class InnerTubeClient {
         guard (200...299).contains(httpResponse.statusCode) else {
             // Map 401/403 to authenticationExpired when logged in (session expired)
             if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && isAuthenticated {
+                let bodyPreview = String(data: data.prefix(500), encoding: .utf8) ?? ""
+                await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) isAuth=\(self.isAuthenticated) \(self.debugAuthState) body=\(bodyPreview.prefix(200))") }
+                print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(debugAuthState) body=\(bodyPreview.prefix(500))")
                 throw InnerTubeError.authenticationExpired
             }
             throw InnerTubeError.httpError(statusCode: httpResponse.statusCode)
