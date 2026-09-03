@@ -98,34 +98,52 @@ class LibraryManager: ObservableObject {
     func syncLibrary() async throws {
         guard let context = modelContext else {
             print("⚠️ [LibraryManager] No model context for sync")
+            await MainActor.run { DebugLogger.shared.log("⚠️ sync no ModelContext") }
             return
         }
 
         print("🔄 [LibraryManager] Starting library sync...")
+        await MainActor.run { DebugLogger.shared.log("🔄 sync start isAuth=\(InnerTubeClient.shared.isAuthenticated) \(InnerTubeClient.shared.debugAuthState)") }
 
         // Sync liked songs (batch mode to avoid reloading after each song)
         do {
+            await MainActor.run { DebugLogger.shared.log("📥 getLikedSongs start") }
             let ytLikedSongs = try await ytMusic.getLikedSongs()
             print("📥 [LibraryManager] Syncing \(ytLikedSongs.count) liked songs...")
+            await MainActor.run { DebugLogger.shared.log("✅ getLikedSongs \(ytLikedSongs.count)") }
             for ytSong in ytLikedSongs {
                 await saveSong(ytSong, liked: true, skipReload: true)
             }
             print("✅ [LibraryManager] Synced \(ytLikedSongs.count) liked songs")
         } catch {
             print("❌ [LibraryManager] Failed to sync liked songs: \(error)")
+            await MainActor.run { DebugLogger.shared.log("❌ getLikedSongs \(error)") }
             throw error
         }
 
         // Sync playlists (batch mode to avoid reloading after each playlist)
         do {
-            let ytPlaylists = try await ytMusic.getLibraryPlaylists()
+            var ytPlaylists = try await ytMusic.getLibraryPlaylists()
             print("📥 [LibraryManager] Syncing \(ytPlaylists.count) playlists...")
+            await MainActor.run { DebugLogger.shared.log("📥 getLibraryPlaylists \(ytPlaylists.count)") }
+            // Fallback para cuentas con 1 sola lista creada por el usuario (a veces viene en carousel, no grid)
+            if ytPlaylists.isEmpty {
+                do {
+                    let alt = try await ytMusic.getAccountPlaylists()
+                    print("📚 [LibraryManager] Fallback getAccountPlaylists \(alt.count)")
+                    await MainActor.run { DebugLogger.shared.log("📚 fallback accountPlaylists \(alt.count)") }
+                    ytPlaylists = alt
+                } catch {
+                    print("⚠️ [LibraryManager] Fallback failed \(error)")
+                }
+            }
             for ytPlaylist in ytPlaylists {
                 await savePlaylist(ytPlaylist, skipReload: true)
             }
             print("✅ [LibraryManager] Synced \(ytPlaylists.count) playlists")
         } catch {
             print("❌ [LibraryManager] Failed to sync playlists: \(error)")
+            await MainActor.run { DebugLogger.shared.log("❌ getLibraryPlaylists \(error)") }
             // Don't throw - partial sync is okay
         }
 

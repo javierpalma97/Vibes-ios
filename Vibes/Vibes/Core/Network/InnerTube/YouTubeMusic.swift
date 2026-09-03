@@ -1630,12 +1630,14 @@ class YouTubeMusic {
         }
 
         var playlists: [YTPlaylist] = []
+        await MainActor.run { DebugLogger.shared.log("📚 parse playlists sections=\(response.contents?.singleColumnBrowseResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents?.count ?? -1)") }
 
         if let tabs = response.contents?.singleColumnBrowseResultsRenderer?.tabs,
            let firstTab = tabs.first,
            let sectionContents = firstTab.tabRenderer?.content?.sectionListRenderer?.contents {
-
-            for section in sectionContents {
+            await MainActor.run { DebugLogger.shared.log("📚 sections \(sectionContents.count) firstTypes=\(sectionContents.prefix(2).map { String(describing: type(of: $0)) })") }
+            for (idx, section) in sectionContents.enumerated() {
+                await MainActor.run { DebugLogger.shared.log("📚 sec \(idx) hasGrid=\(section.gridRenderer != nil) hasShelf=\(section.musicShelfRenderer != nil) hasCarousel=\(section.musicCarouselShelfRenderer != nil) hasItemSec=\(section.itemSectionRenderer != nil)") }
                 // Check for authentication error message
                 if let itemSection = section.itemSectionRenderer,
                    let firstContent = itemSection.contents?.first,
@@ -1707,9 +1709,28 @@ class YouTubeMusic {
                         }
                     }
                 }
+
+                // Try musicCarouselShelfRenderer (para cuentas con 1 sola playlist creada, a veces viene como carrusel)
+                if let carousel = section.musicCarouselShelfRenderer, let contents = carousel.contents {
+                    for content in contents {
+                        if let renderer = content.musicTwoRowItemRenderer,
+                           let browseId = renderer.navigationEndpoint?.browseEndpoint?.browseId,
+                           let title = renderer.title?.combined {
+                            let subtitle = renderer.subtitle?.combined
+                            let thumbnailUrl = renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.last?.url
+                            let songCount = parseSongCount(from: subtitle)
+                            let playlistId = browseId.hasPrefix("VL") ? String(browseId.dropFirst(2)) : browseId
+                            // Evita duplicados
+                            if !playlists.contains(where: { $0.id == playlistId }) {
+                                playlists.append(YTPlaylist(id: playlistId, name: title, author: nil, thumbnailUrl: thumbnailUrl, songCount: songCount, playlistId: nil))
+                            }
+                        }
+                    }
+                }
             }
         }
 
+        await MainActor.run { DebugLogger.shared.log("📚 parsed \(playlists.count) playlists") }
         return playlists
     }
 
