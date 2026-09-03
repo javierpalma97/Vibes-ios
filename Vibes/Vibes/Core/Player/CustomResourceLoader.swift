@@ -65,105 +65,68 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 }
             }
 
-            // Determine if this is a huge request (entire file) – we must fetch it chunked
-            let needsChunkedFetch = requestedLength <= 0 || requestedLength >= Int.max - 1 || Int64(requestedLength) > maxChunk * 2
+            // Huge requests (AVPlayer pide 0-3M) no deben fetchear todo el fichero → lento y 403 tras 1M.
+            // Solo devolvemos el primer maxChunk (200KB) y dejamos que AVPlayer pida el resto secuencialmente.
+            let isHuge = requestedLength <= 0 || requestedLength >= Int.max - 1 || Int64(requestedLength) > maxChunk * 2
             var combinedData = Data()
             var httpResponse: HTTPURLResponse?
             var totalLengthFromServer: Int64 = 0
             var mimeType: String?
 
-            if needsChunkedFetch && !isProbe {
-                // Fetch the huge range in 200KB chunks and combine (avoids 403 on 3M single Range)
+            if isHuge && !isProbe {
                 let originalLength = requestedLength
-                let totalRequested = Int64(requestedLength)
-                print("🔄 [ResourceLoader] Huge request \(originalLength) detected, fetching chunked 200KB")
-                await MainActor.run { DebugLogger.shared.log("🔄 huge \(requestedOffset)-\(totalRequested) chunked") }
-                var offset = requestedOffset
-                var remaining = totalRequested
-                // Cap total fetch to avoid infinite loop if AVPlayer requests Int.max
-                let maxTotalFetch: Int64 = 4_000_000 // 4MB max for audio
-                if remaining > maxTotalFetch || remaining <= 0 {
-                    remaining = maxTotalFetch
-                }
-                while remaining > 0 {
-                    let chunkEnd = min(offset + maxChunk - 1, requestedOffset + totalRequested - 1)
-                    var chunkData: Data = Data()
-                    var chunkHttp: HTTPURLResponse?
-                    // Try header Range first, then fallback to query &range= for 403 (some itags like 139 fail at 400k with header)
-                    var lastError: Error?
-                    for attempt in 0..<3 {
-                        var chunkRequest: URLRequest
-                        if attempt == 0 {
-                            chunkRequest = URLRequest(url: url)
-                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
-                            chunkRequest.setValue("bytes=\(offset)-\(chunkEnd)", forHTTPHeaderField: "Range")
-                            print("🔄 [ResourceLoader] Chunk fetch bytes=\(offset)-\(chunkEnd) (header)")
-                            await MainActor.run { DebugLogger.shared.log("🔄 chunk \(offset)-\(chunkEnd) header") }
-                        } else if attempt == 1 {
-                            // Fallback: use query &range=
-                            let sep = url.absoluteString.contains("?") ? "&" : "?"
-                            let qUrlString = url.absoluteString + "\(sep)range=\(offset)-\(chunkEnd)"
-                            guard let qUrl = URL(string: qUrlString) else { throw NSError(domain: "CustomResourceLoader", code: -2) }
-                            chunkRequest = URLRequest(url: qUrl)
-                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
-                            print("🔄 [ResourceLoader] Chunk fallback query range=\(offset)-\(chunkEnd)")
-                            await MainActor.run { DebugLogger.shared.log("🔄 chunk fallback query \(offset)-\(chunkEnd)") }
-                        } else {
-                            // Last attempt: smaller chunk 100KB with header + delay (rate-limit)
-                            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6s
-                            let smallEnd = min(offset + 100_000 - 1, requestedOffset + totalRequested - 1)
-                            chunkRequest = URLRequest(url: url)
-                            chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                            chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
-                            chunkRequest.setValue("bytes=\(offset)-\(smallEnd)", forHTTPHeaderField: "Range")
-                            print("🔄 [ResourceLoader] Chunk retry small 100KB bytes=\(offset)-\(smallEnd)")
-                            await MainActor.run { DebugLogger.shared.log("🔄 chunk retry small \(offset)-\(smallEnd)") }
+                print("🔄 [ResourceLoader] Huge \(requestedOffset)-\(originalLength) → cap \(maxChunk) para fluidez")
+                await MainActor.run { DebugLogger.shared.log("🔄 huge \(requestedOffset)-\(originalLength) cap \(maxChunk)") }
+                // Solo primer chunk, no todo el fichero
+                var fetchOffset = requestedOffset
+                var fetchLength = Int(maxChunk)
+                var chunkData: Data = Data()
+                var chunkHttp: HTTPURLResponse?
+                var lastError: Error?
+                for attempt in 0..<2 {
+                    var chunkRequest: URLRequest
+                    if attempt == 0 {
+                        chunkRequest = URLRequest(url: url)
+                        chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                        chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                        chunkRequest.setValue("bytes=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1)", forHTTPHeaderField: "Range")
+                        print("🔄 [ResourceLoader] Huge cap fetch bytes=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1) (header)")
+                    } else {
+                        let sep = url.absoluteString.contains("?") ? "&" : "?"
+                        let qUrlString = url.absoluteString + "\(sep)range=\(fetchOffset)-\(fetchOffset+Int64(fetchLength)-1)"
+                        guard let qUrl = URL(string: qUrlString) else { throw NSError(domain: "CustomResourceLoader", code: -2) }
+                        chunkRequest = URLRequest(url: qUrl)
+                        chunkRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                        chunkRequest.setValue("*/*", forHTTPHeaderField: "Accept")
+                        print("🔄 [ResourceLoader] Huge fallback query")
+                    }
+                    do {
+                        let (data, response) = try await URLSession.shared.data(for: chunkRequest)
+                        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) || http.statusCode == 206 else {
+                            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                            print("❌ [ResourceLoader] Huge HTTP \(code) attempt \(attempt)")
+                            lastError = NSError(domain: "CustomResourceLoader", code: code)
+                            continue
                         }
-                        do {
-                            let (data, response) = try await URLSession.shared.data(for: chunkRequest)
-                            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) || http.statusCode == 206 else {
-                                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                                print("❌ [ResourceLoader] Chunk HTTP \(code) attempt \(attempt)")
-                                await MainActor.run { DebugLogger.shared.log("❌ chunk HTTP \(code) attempt \(attempt)") }
-                                lastError = NSError(domain: "CustomResourceLoader", code: code)
-                                if attempt < 2 { try? await Task.sleep(nanoseconds: 400_000_000) }
-                                continue // try next attempt
-                            }
-                            chunkData = data
-                            chunkHttp = http as HTTPURLResponse
-                            lastError = nil
-                            break
-                        } catch {
-                            lastError = error
-                            print("❌ [ResourceLoader] Chunk error \(error) attempt \(attempt)")
-                            await MainActor.run { DebugLogger.shared.log("❌ chunk error \(error.localizedDescription) attempt \(attempt)") }
-                            if attempt < 2 { try? await Task.sleep(nanoseconds: 400_000_000) }
-                        }
+                        chunkData = data
+                        chunkHttp = http as HTTPURLResponse
+                        lastError = nil
+                        break
+                    } catch {
+                        lastError = error
+                        print("❌ [ResourceLoader] Huge error \(error) attempt \(attempt)")
                     }
-                    guard let chunkHttpUnwrapped = chunkHttp else {
-                        throw lastError ?? NSError(domain: "CustomResourceLoader", code: -1)
-                    }
-                    let chunkHttpFinal = chunkHttpUnwrapped
-                    if httpResponse == nil { httpResponse = chunkHttpFinal }
-                    if mimeType == nil { mimeType = chunkHttpFinal.mimeType }
-                    if totalLengthFromServer == 0, let cr = chunkHttpFinal.value(forHTTPHeaderField: "Content-Range") {
-                        let parts = cr.components(separatedBy: "/")
-                        if parts.count == 2, let total = Int64(parts[1]) { totalLengthFromServer = total }
-                    }
-                    combinedData.append(chunkData)
-                    let fetched = Int64(chunkData.count)
-                    offset += fetched
-                    remaining -= fetched
-                    if fetched < maxChunk { break } // EOF
-                    if combinedData.count >= totalRequested { break }
                 }
-                print("✅ [ResourceLoader] Chunked fetch done \(combinedData.count) bytes")
-                await MainActor.run { DebugLogger.shared.log("✅ chunked \(combinedData.count) total=\(totalLengthFromServer)") }
-                // Fall through to contentInfo and dataResponse handling with combinedData
-                // We need to synthesize a HTTPURLResponse for later contentInfo
-                // For now, use the last chunk's httpResponse
+                guard let http = chunkHttp else { throw lastError ?? NSError(domain: "CustomResourceLoader", code: -1) }
+                httpResponse = http
+                mimeType = http.mimeType
+                if let cr = http.value(forHTTPHeaderField: "Content-Range") {
+                    let parts = cr.components(separatedBy: "/")
+                    if parts.count == 2, let total = Int64(parts[1]) { totalLengthFromServer = total }
+                }
+                combinedData = chunkData
+                print("✅ [ResourceLoader] Huge cap done \(combinedData.count) total=\(totalLengthFromServer)")
+                await MainActor.run { DebugLogger.shared.log("✅ huge cap \(combinedData.count) total=\(totalLengthFromServer)") }
             } else {
                 // Small probe or capped chunk – single request
                 var request = URLRequest(url: url)

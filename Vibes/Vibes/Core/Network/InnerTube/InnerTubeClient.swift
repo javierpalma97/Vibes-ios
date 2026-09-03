@@ -126,7 +126,7 @@ class InnerTubeClient {
     }
 
     var isAuthenticated: Bool {
-        return cookies != nil && !(cookies?.isEmpty ?? true) && !(visitorData?.isEmpty ?? true)
+        return cookies != nil && !(cookies?.isEmpty ?? true)
     }
 
     var debugAuthState: String {
