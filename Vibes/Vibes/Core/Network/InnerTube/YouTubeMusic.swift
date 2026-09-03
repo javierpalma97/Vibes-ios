@@ -291,10 +291,12 @@ class YouTubeMusic {
         // - IOS 20.42 and ANDROID 20.07 are the most reliable without PO Token (no login required)
         // - ANDROID_MUSIC now requires auth (LOGIN_REQUIRED without cookies), so only try when authenticated
         // - WEB clients now often need poToken and fail with UNPLAYABLE, so deprioritized
+        // Player: ANDROID/IOS no necesitan poToken (MeeTube 2026-06-29, yt-dlp: WEB_REMIX exige GVS po_token → 403 len=0).
+        // Aunque haya sesión, el stream debe salir de ANDROID sin auth; WEB_REMIX auth da URL pero googlevideo 403.
+        // Por eso SIEMPRE se prueba ANDROID/IOS primero, con o sin login.
         var clients: [InnerTubeClientType] = []
         if client.isAuthenticated {
-            // SAPISIDHASH solo válido con WEB_REMIX (diagnóstico 401: ANDROID_MUSIC + SAPISID → 401). Para streaming logueado usa WEB_REMIX con Cookie.
-            clients.append(contentsOf: [.webRemix, .androidMusic, .android, .ios, .tvEmbedded, .web])
+            clients.append(contentsOf: [.android, .ios, .webRemix, .androidMusic, .tvEmbedded, .web])
         } else {
             // Unauthenticated: ANDROID permite 1.7M con 200k, IOS throttlea
             clients.append(contentsOf: [.android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
@@ -590,27 +592,32 @@ class YouTubeMusic {
             "browseId": browseId
         ]
 
-        // H1: WEB_REMIX+SAPISID 401 → prueba IOS cuando hay sesión (y fallback a noauth si 401)
-        let browseClient: InnerTubeClientType = client.isAuthenticated ? .ios : .webRemix
-        do {
-            return try await client.makeRequest(
-                endpoint: "browse",
-                body: body,
-                clientType: browseClient,
-                responseType: BrowseResponse.self
-            )
-        } catch InnerTubeError.authenticationExpired {
-            // Reintenta una vez sin auth (como hace player) antes de propagar 401
-            if client.isAuthenticated {
-                return try await client.makeRequest(
+        // Multi-método en 1 build: prueba IOS auth → WEB_REMIX auth → IOS noauth → WEB_REMIX noauth.
+        // Tu log muestra WEB_REMIX+SAPISID → 401 sistemático, IOS a veces pasa; y sin auth todo va.
+        let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
+            ? [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true), (.android, true)]
+            : [(.webRemix, false)]
+        var lastErr: Error = InnerTubeError.authenticationExpired
+        for (ctype, noAuth) in attempts {
+            do {
+                await MainActor.run { DebugLogger.shared.log("📚 browse \(browseId) try \(ctype) forceNoAuth=\(noAuth)") }
+                let resp: BrowseResponse = try await client.makeRequest(
                     endpoint: "browse",
                     body: body,
-                    clientType: .webRemix,
+                    clientType: ctype,
+                    forceNoAuth: noAuth,
                     responseType: BrowseResponse.self
                 )
+                await MainActor.run { DebugLogger.shared.log("📚 browse \(browseId) OK via \(ctype) noAuth=\(noAuth)") }
+                return resp
+            } catch {
+                lastErr = error
+                await MainActor.run { DebugLogger.shared.log("❌ browse \(browseId) via \(ctype) noAuth=\(noAuth) err=\(error)") }
+                // Si es 401/auth, prueba siguiente; si es otro error, también prueba siguiente
+                continue
             }
-            throw InnerTubeError.authenticationExpired
         }
+        throw lastErr
     }
 
     func getAlbum(browseId: String) async throws -> (YTAlbum, [YTSong]) {
@@ -1082,23 +1089,25 @@ class YouTubeMusic {
             body["params"] = params
         }
 
-        let browseClient: InnerTubeClientType = client.isAuthenticated ? .ios : .webRemix
-        do {
-            return try await client.makeRequest(
-                endpoint: "browse",
-                body: body,
-                clientType: browseClient,
-                responseType: BrowseResponse.self
-            )
-        } catch InnerTubeError.authenticationExpired where client.isAuthenticated {
-            // Fallback sin auth si IOS+Bearer falla (cuenta nueva sin librería)
-            return try await client.makeRequest(
-                endpoint: "browse",
-                body: body,
-                clientType: .webRemix,
-                responseType: BrowseResponse.self
-            )
+        let attempts: [(InnerTubeClientType, Bool)] = client.isAuthenticated
+            ? [(.ios, false), (.webRemix, false), (.ios, true), (.webRemix, true)]
+            : [(.webRemix, false)]
+        var lastErr: Error = InnerTubeError.authenticationExpired
+        for (ctype, noAuth) in attempts {
+            do {
+                return try await client.makeRequest(
+                    endpoint: "browse",
+                    body: body,
+                    clientType: ctype,
+                    forceNoAuth: noAuth,
+                    responseType: BrowseResponse.self
+                )
+            } catch {
+                lastErr = error
+                continue
+            }
         }
+        throw lastErr
     }
 
     // MARK: - Explore Page

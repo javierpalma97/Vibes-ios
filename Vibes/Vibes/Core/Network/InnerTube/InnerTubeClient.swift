@@ -256,7 +256,8 @@ class InnerTubeClient {
     private func buildRequest(
         endpoint: String,
         body: [String: Any],
-        clientType: InnerTubeClientType = .webRemix
+        clientType: InnerTubeClientType = .webRemix,
+        forceNoAuth: Bool = false
     ) -> URLRequest? {
         let key = apiKey(for: clientType)
         guard let url = URL(string: "\(baseURL)/\(endpoint)?key=\(key)&prettyPrint=false") else {
@@ -286,15 +287,19 @@ class InnerTubeClient {
 
         // Send cookies for authenticated requests – but NOT for player with ANDROID/IOS
         // (player with ANDROID/IOS works without auth and 403 with stale SAPISIDHASH; see logs client=auth -> 403)
+        // forceNoAuth permite reintentos sin auth aunque haya sesión (fallback H1)
         let shouldSendAuth = {
+            if forceNoAuth { return false }
             if !isAuthenticated { return false }
             if endpoint == "player" && (clientType == .android || clientType == .ios) {
                 return false
             }
             return true
         }()
+        let effectiveIsAuth = !forceNoAuth && isAuthenticated
         // OAuth2 Bearer tiene prioridad sobre SAPISIDHASH (MusicBot #1670 / youtube-source#33)
-        if let bearer = OAuthManager.bearerHeaderSync {
+        // Si forceNoAuth, tampoco mandamos Bearer
+        if !forceNoAuth, let bearer = OAuthManager.bearerHeaderSync {
             request.setValue(bearer, forHTTPHeaderField: "Authorization")
             // Para OAuth, no mandamos Cookie SAPISIDHASH, solo Bearer + visitorData
             Task { @MainActor in DebugLogger.shared.log("🔑 oauth \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))") }
@@ -313,10 +318,10 @@ class InnerTubeClient {
                 Task { @MainActor in DebugLogger.shared.log("⚠️ no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))") }
                 print("⚠️ [Auth] no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))")
             }
-        } else if isAuthenticated && endpoint != "player" {
+        } else if effectiveIsAuth && endpoint != "player" {
             let isOAuth = OAuthManager.isAuthenticatedSync
-            Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(isAuthenticated) oauth=\(isOAuth)") }
-            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType) oauth=\(isOAuth)")
+            Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(effectiveIsAuth) oauth=\(isOAuth) forceNoAuth=\(forceNoAuth)") }
+            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType) oauth=\(isOAuth) forceNoAuth=\(forceNoAuth)")
         }
 
         // Build request body with context
@@ -370,9 +375,10 @@ class InnerTubeClient {
         endpoint: String,
         body: [String: Any],
         clientType: InnerTubeClientType = .webRemix,
+        forceNoAuth: Bool = false,
         responseType: T.Type
     ) async throws -> T {
-        guard let request = buildRequest(endpoint: endpoint, body: body, clientType: clientType) else {
+        guard let request = buildRequest(endpoint: endpoint, body: body, clientType: clientType, forceNoAuth: forceNoAuth) else {
             throw InnerTubeError.invalidRequest
         }
 
@@ -386,7 +392,8 @@ class InnerTubeClient {
         guard (200...299).contains(httpResponse.statusCode) else {
             // Map 401/403 to authenticationExpired when logged in (session expired)
             // Si hay Bearer OAuth, no es expirado de cookie, es falta de scope – no hacer signOut automático
-            if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && (isAuthenticated || OAuthManager.isAuthenticatedSync) {
+            // Si forceNoAuth, no es error de sesión, es solo que ese cliente no necesita auth
+            if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && !forceNoAuth && (isAuthenticated || OAuthManager.isAuthenticatedSync) {
                 let bodyPreview = String(data: data.prefix(500), encoding: .utf8) ?? ""
                 let isAuth = isAuthenticated
                 let isOAuth = OAuthManager.isAuthenticatedSync
@@ -413,12 +420,13 @@ class InnerTubeClient {
         endpoint: String,
         continuation: String,
         clientType: InnerTubeClientType = .webRemix,
+        forceNoAuth: Bool = false,
         responseType: T.Type
     ) async throws -> T {
         let body: [String: Any] = [
             "continuation": continuation
         ]
-        return try await makeRequest(endpoint: endpoint, body: body, clientType: clientType, responseType: responseType)
+        return try await makeRequest(endpoint: endpoint, body: body, clientType: clientType, forceNoAuth: forceNoAuth, responseType: responseType)
     }
 }
 

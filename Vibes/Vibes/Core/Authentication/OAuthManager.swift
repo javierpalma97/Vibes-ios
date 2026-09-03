@@ -128,37 +128,55 @@ class OAuthManager: ObservableObject {
     }
 
     func pollForToken(deviceCode: String, interval: Int) async throws -> TokenResponse {
+        // Sesión que sobrevive a background/suspensión (tu log: network connection was lost al minimizar)
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
         var req = URLRequest(url: tokenURL)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        // interval del server (normal 5s) + 0.5s
         let sleepNs = UInt64((interval + 1) * 1_000_000_000)
         let deadline = Date().addingTimeInterval(600) // 10 min
+        var networkFails = 0
         while Date() < deadline {
+            // Permite cancelación desde la UI sin matar la sesión
+            if Task.isCancelled { throw OAuthError.expired }
             let body = "client_id=\(clientId)&client_secret=\(clientSecret)&device_code=\(deviceCode)&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"
             req.httpBody = body.data(using: .utf8)
-            let (data, _) = try await URLSession.shared.data(for: req)
-            let token = try JSONDecoder().decode(TokenResponse.self, from: data)
-            if let err = token.error {
-                if err == "authorization_pending" {
-                    DebugLogger.shared.log("⏳ poll pending...")
-                    try? await Task.sleep(nanoseconds: sleepNs)
-                    continue
-                } else if err == "slow_down" {
-                    try? await Task.sleep(nanoseconds: sleepNs + 2_000_000_000)
-                    continue
-                } else if err == "expired_token" {
-                    DebugLogger.shared.log("❌ device_code expired")
-                    throw OAuthError.expired
-                } else {
-                    DebugLogger.shared.log("❌ poll error \(err) \(token.error_description ?? "")")
-                    throw OAuthError.requestFailed(err)
+            do {
+                let (data, _) = try await session.data(for: req)
+                networkFails = 0
+                let token = try JSONDecoder().decode(TokenResponse.self, from: data)
+                if let err = token.error {
+                    if err == "authorization_pending" {
+                        DebugLogger.shared.log("⏳ poll pending...")
+                        try? await Task.sleep(nanoseconds: sleepNs)
+                        continue
+                    } else if err == "slow_down" {
+                        try? await Task.sleep(nanoseconds: sleepNs + 2_000_000_000)
+                        continue
+                    } else if err == "expired_token" {
+                        DebugLogger.shared.log("❌ device_code expired")
+                        throw OAuthError.expired
+                    } else {
+                        DebugLogger.shared.log("❌ poll error \(err) \(token.error_description ?? "")")
+                        throw OAuthError.requestFailed(err)
+                    }
                 }
-            }
-            if let at = token.access_token {
-                save(access: at, refresh: token.refresh_token, expiresIn: token.expires_in)
-                DebugLogger.shared.log("✅ OAuth token ok expires_in=\(token.expires_in ?? -1)")
-                return token
+                if let at = token.access_token {
+                    save(access: at, refresh: token.refresh_token, expiresIn: token.expires_in)
+                    DebugLogger.shared.log("✅ OAuth token ok expires_in=\(token.expires_in ?? -1)")
+                    return token
+                }
+            } catch let e as URLError {
+                // No aborta en pérdida de red (tu caso WiFi 1min): reintenta hasta 10 veces
+                networkFails += 1
+                DebugLogger.shared.log("⚠️ poll network lost (\(networkFails)/10) reintentando... \(e.localizedDescription)")
+                if networkFails >= 10 { throw OAuthError.requestFailed("network lost x10: \(e.localizedDescription)") }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                continue
             }
             try? await Task.sleep(nanoseconds: sleepNs)
         }

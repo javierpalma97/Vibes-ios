@@ -65,12 +65,14 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 }
             }
 
-            // Para googlevideo con auth (WEB_REMIX), mandar Cookie + SAPISIDHASH (si no, 403 len=0 como en tu log vutbVGewIcg con webRemix)
-            let authCookies = await MainActor.run { InnerTubeClient.shared.currentCookies }
-            let authHeader = await MainActor.run { () -> String? in
-                // Genera SAPISIDHASH igual que InnerTubeClient para googlevideo con WEB_REMIX
-                guard let cookies = InnerTubeClient.shared.currentCookies else { return nil }
-                // Usa el mismo helper que InnerTubeClient (duplicado aquí para no exponer generate)
+            // googlevideo: ANDROID/IOS son URLs sin auth (sin poToken van bien). WEB_REMIX exige poToken → 403 len=0.
+            // Por eso SOLO mandamos Cookie si el UA es web (Chrome); para ANDROID/IOS nunca mandamos cookies aunque haya sesión.
+            let isWebUA = userAgent.contains("Chrome") || userAgent.contains("Mozilla")
+            let authCookies: String? = await MainActor.run {
+                isWebUA ? InnerTubeClient.shared.currentCookies : nil
+            }
+            let authHeader: String? = await MainActor.run { () -> String? in
+                guard isWebUA, let cookies = InnerTubeClient.shared.currentCookies else { return nil }
                 let map = cookies.split(separator: ";").reduce(into: [String:String]()) { res, part in
                     let t = part.trimmingCharacters(in: .whitespaces)
                     if let eq = t.firstIndex(of: "=") {
