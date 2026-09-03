@@ -272,7 +272,10 @@ class InnerTubeClient {
     private func getClientInfo(for clientType: InnerTubeClientType) -> (String, String, String?) {
         switch clientType {
         case .webRemix:
-            return ("WEB_REMIX", "1.20250224.01.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            // Valores EXACTOS capturados de Safari real (mitmproxy, logged_in=1 con cookies):
+            // versión 1.20260901.12.00 + UA iPhone actual. La versión de feb-2025
+            // devolvía sign-in prompt (logged_in=0) con las mismas cookies.
+            return ("WEB_REMIX", "1.20260901.12.00", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1")
         case .web:
             return ("WEB", "2.20250222.10.00", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         case .tv:
@@ -324,12 +327,15 @@ class InnerTubeClient {
             request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
             request.setValue(visitorData ?? defaultVisitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
         } else {
-            request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
+            // Safari real envía el nombre NUMÉRICO para WEB_REMIX ("67", verificado mitmproxy)
+            let headerName = clientType == .webRemix ? "67" : clientName
+            request.setValue(headerName, forHTTPHeaderField: "X-YouTube-Client-Name")
             request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
             request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
             request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
             if clientType == .webRemix || clientType == .webCreator || clientType == .web {
                 request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+                request.setValue(isAuthenticated ? "true" : "false", forHTTPHeaderField: "x-youtube-bootstrap-logged-in")
             }
         }
 
