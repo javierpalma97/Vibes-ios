@@ -326,6 +326,8 @@ class InnerTubeClient {
             }
         } else if shouldSendAuth, let cookies = cookies {
             request.setValue(cookies, forHTTPHeaderField: "Cookie")
+            // X-Goog-AuthUser ayuda a Google a resolver la sesión multi-login (ytmusicapi lo envía)
+            request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
             if let sapisidHash = generateSAPISIDHASH() {
                 request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
                 Task { @MainActor in DebugLogger.shared.log("🔑 auth \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))") }

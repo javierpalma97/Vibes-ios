@@ -149,10 +149,11 @@ class DownloadManager: NSObject, ObservableObject {
         var totalWritten: Int64 = 0
         var discoveredLength: Int64?
 
+        var rn = 0
         // First, if totalLength is 0, do a probe to discover length via Range 0-999999
         if totalLength <= 0 {
             let probeEnd: Int64 = chunkSize - 1
-            let (probeData, probeTotal) = try await fetchChunk(url: url, clientType: clientType, start: 0, end: probeEnd)
+            let (probeData, probeTotal) = try await fetchChunk(url: url, clientType: clientType, start: 0, end: probeEnd, rn: rn); rn += 1
             if let total = probeTotal {
                 totalLength = total
                 discoveredLength = total
@@ -183,7 +184,7 @@ class DownloadManager: NSObject, ObservableObject {
             let chunkData: Data
             let chunkTotal: Int64?
             do {
-                (chunkData, chunkTotal) = try await fetchChunk(url: currentURL, clientType: clientType, start: offset, end: end)
+                (chunkData, chunkTotal) = try await fetchChunk(url: currentURL, clientType: clientType, start: offset, end: end, rn: rn); rn += 1
             } catch DownloadError.forbidden where urlRefreshes < 3 {
                 // Cuota de la URL agotada (~1MB): pedir URL fresca y reanudar mismo offset
                 urlRefreshes += 1
@@ -235,8 +236,17 @@ class DownloadManager: NSObject, ObservableObject {
         }
     }
 
-    private func fetchChunk(url: URL, clientType: InnerTubeClientType, start: Int64, end: Int64) async throws -> (Data, Int64?) {
-        var request = URLRequest(url: url)
+    private func fetchChunk(url: URL, clientType: InnerTubeClientType, start: Int64, end: Int64, rn: Int) async throws -> (Data, Int64?) {
+        // rn incremental como ExoPlayer; sin él googlevideo 403 tras N rangos
+        var reqURL = url
+        if var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            var items = c.queryItems ?? []
+            items.removeAll { $0.name == "rn" }
+            items.append(URLQueryItem(name: "rn", value: String(rn)))
+            c.queryItems = items
+            reqURL = c.url ?? url
+        }
+        var request = URLRequest(url: reqURL)
         request.setValue(InnerTubeClient.shared.getUserAgent(for: clientType), forHTTPHeaderField: "User-Agent")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")

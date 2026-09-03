@@ -1929,22 +1929,30 @@ class YouTubeMusic {
         // webRemix+Bearer da 400; el cliente TV es el único que acepta Bearer
         let ctype: InnerTubeClientType = client.hasBearer ? .tv : .webRemix
         do {
-            return try await client.makeRequest(
+            let resp: NextResponse = try await client.makeRequest(
                 endpoint: "next",
                 body: body,
                 clientType: ctype,
                 responseType: NextResponse.self
             )
+            return resp
         } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ next via \(ctype) err=\(error)") }
             // Fallback público sin auth (radio de contenido público no necesita login)
             if client.hasBearer {
-                return try await client.makeRequest(
-                    endpoint: "next",
-                    body: body,
-                    clientType: .webRemix,
-                    forceNoAuth: true,
-                    responseType: NextResponse.self
-                )
+                do {
+                    let resp: NextResponse = try await client.makeRequest(
+                        endpoint: "next",
+                        body: body,
+                        clientType: .webRemix,
+                        forceNoAuth: true,
+                        responseType: NextResponse.self
+                    )
+                    return resp
+                } catch {
+                    await MainActor.run { DebugLogger.shared.log("❌ next fallback noAuth err=\(error)") }
+                    throw error
+                }
             }
             throw error
         }
@@ -2235,7 +2243,26 @@ class YouTubeMusic {
 
     func getCharts() async throws -> ChartsPage {
         let response = try await browseWithParams(browseId: "FEmusic_charts", params: "ggMGCgQIgAQ%3D")
-        return parseChartsPage(response)
+        let page = parseChartsPage(response)
+        if !page.sections.isEmpty { return page }
+        // La vista Charts muestra BLANCO sin error cuando sections=[]: la forma del
+        // response cambió. Fallback con parseo genérico del JSON crudo.
+        do {
+            let raw = try await client.makeRawRequest(
+                endpoint: "browse",
+                body: ["browseId": "FEmusic_charts", "params": "ggMGCgQIgAQ%3D"],
+                clientType: .webRemix,
+                forceNoAuth: !client.isAuthenticated
+            )
+            let sections = rawChartSections(raw)
+            await MainActor.run { DebugLogger.shared.log("📊 charts raw fallback sections=\(sections.count)") }
+            if !sections.isEmpty { return ChartsPage(sections: sections) }
+            let keys = Self.deepKeys(raw, depth: 6)
+            await MainActor.run { DebugLogger.shared.log("🔍 charts deepKeys=\(keys.prefix(40))") }
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ charts raw fallback \(error)") }
+        }
+        return page
     }
 
     private func parseChartsPage(_ response: BrowseResponse) -> ChartsPage {
@@ -2266,6 +2293,54 @@ class YouTubeMusic {
         }
 
         return ChartsPage(sections: sections)
+    }
+
+    /// Charts desde JSON genérico: agrupa musicTwoRowItemRenderer por su carousel/header.
+    private func rawChartSections(_ root: [String: Any]) -> [ChartSection] {
+        var sections: [ChartSection] = []
+        walk(root) { d in
+            guard let shelf = d["musicCarouselShelfRenderer"] as? [String: Any] else { return }
+            var title = ""
+            if let header = shelf["header"] as? [String: Any] {
+                if let basic = header["musicCarouselShelfBasicHeaderRenderer"] as? [String: Any] {
+                    title = rawTexts(basic["title"]).joined()
+                }
+                if title.isEmpty { title = rawTexts(header["title"]).joined() }
+            }
+            var items: [HomeItem] = []
+            if let contents = shelf["contents"] as? [Any] {
+                for c in contents {
+                    guard let cd = c as? [String: Any],
+                          let twoRow = cd["musicTwoRowItemRenderer"] as? [String: Any],
+                          let item = rawTwoRowHomeItem(twoRow) else { continue }
+                    items.append(item)
+                }
+            }
+            if !items.isEmpty {
+                sections.append(ChartSection(title: title.isEmpty ? "Charts" : title, items: items))
+            }
+        }
+        return sections
+    }
+
+    /// musicTwoRowItemRenderer genérico → HomeItem (playlist VL/PL, álbum MPRE, artista UC).
+    private func rawTwoRowHomeItem(_ d: [String: Any]) -> HomeItem? {
+        guard let nav = d["navigationEndpoint"] as? [String: Any],
+              let be = nav["browseEndpoint"] as? [String: Any],
+              let bid = be["browseId"] as? String else { return nil }
+        let title = rawTexts(d["title"]).joined()
+        guard !title.isEmpty else { return nil }
+        let subtitle = rawTexts(d["subtitle"]).joined(separator: " ")
+        let thumb = rawThumb(d["thumbnailRenderer"]) ?? rawThumb(d["thumbnail"])
+        if bid.hasPrefix("VL") || bid.hasPrefix("PL") {
+            let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+            return .playlist(YTPlaylist(id: pid, name: title, author: subtitle.isEmpty ? nil : subtitle, thumbnailUrl: thumb, songCount: 0, playlistId: nil))
+        } else if bid.hasPrefix("MPRE") {
+            return .album(YTAlbum(id: bid, title: title, artists: subtitle, year: nil, thumbnailUrl: thumb))
+        } else if bid.hasPrefix("UC") {
+            return .artist(YTArtist(id: bid, name: title, thumbnailUrl: thumb))
+        }
+        return nil
     }
 
     // MARK: - New Releases
