@@ -1134,12 +1134,15 @@ class YouTubeMusic {
         // Si falla, cae a browse público para listas públicas.
         let response: BrowseResponse
         if client.isAuthenticated {
+            // IDs privados: el browse público nunca puede funcionar (VLLM/FEmusic_*
+            // sin auth = sign-in → authenticationExpired). Ir directo a parse+raw.
+            let isPrivateId = browseId == "VLLM" || browseId.hasPrefix("FEmusic_")
             do {
                 let ar = try await browseAuthenticated(browseId: browseId)
-                // Shell TV (Bearer en playlist pública): HTTP 200 sin contenido parseable
+                // Shell TV (Bearer en playlist PÚBLICA): HTTP 200 sin contenido parseable
                 // (ni header, ni twoColumn, ni singleColumn). Tratar como fallo para caer
                 // al browse público en vez de devolver lista vacía / invalidResponse.
-                if ar.header == nil && ar.contents?.twoColumnBrowseResultsRenderer == nil
+                if !isPrivateId && ar.header == nil && ar.contents?.twoColumnBrowseResultsRenderer == nil
                     && ar.contents?.singleColumnBrowseResultsRenderer == nil
                     && ar.contents?.sectionListRenderer == nil {
                     await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) shell authed sin contenido, probando público") }
@@ -1147,6 +1150,8 @@ class YouTubeMusic {
                 }
                 response = ar
             } catch {
+                // IDs privados: no reintentar en público (solo daría sign-in/authExpired)
+                if isPrivateId { throw error }
                 await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) auth falló (\(error)), probando público") }
                 response = try await browse(browseId: browseId)
             }
