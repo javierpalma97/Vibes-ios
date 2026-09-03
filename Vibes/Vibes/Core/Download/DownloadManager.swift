@@ -177,8 +177,8 @@ class DownloadManager: NSObject, ObservableObject {
         var currentURL = url
         var urlRefreshes = 0
         let maxRefreshes = 15
-        // Refresco proactivo cada 800KB: cada URL sirve ~1MB por rangos
-        let segmentSize: Int64 = 800_000
+        // Con URLs VISIONOS no hay muro: proactivo desactivado, solo reactivo ante 403
+        let segmentSize: Int64 = 50_000_000
         var segmentStart: Int64 = 0
         while offset < totalLength {
             // Check for cancellation

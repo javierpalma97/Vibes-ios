@@ -147,9 +147,9 @@ class CustomResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     private func performDownload(_ session: DownloadSession) async {
         let chunkSize = 200_000
-        // Cada URL sirve ~1MB por rangos: refresco proactivo a 800KB con margen,
-        // antes de que googlevideo empiece a 403.
-        let segmentSize = 800_000
+        // Con URLs VISIONOS (sin throttling) no hace falta refresco proactivo: solo
+        // reactivo ante 403. segmentSize alto = proactivo desactivado, red de seguridad.
+        let segmentSize = 50_000_000
         let maxSegments = 15 // cubre ~12MB, de sobra para audio
         var offset = 0
         // googlevideo exige `rn` (request number) incremental en fetches por rangos:

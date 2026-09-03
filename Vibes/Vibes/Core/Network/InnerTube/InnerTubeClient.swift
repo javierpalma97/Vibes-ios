@@ -10,6 +10,9 @@ enum InnerTubeClientType: String {
     case android = "ANDROID"
     case androidMusic = "ANDROID_MUSIC"
     case androidVR = "ANDROID_VR"
+    // VISIONOS: único cliente que en 2026 sirve URLs sin throttling de 1MB
+    // (verificado contra googlevideo: ANDROID/iOS cortan en 1.000.000, VISIONOS completo).
+    case visionOS = "VISIONOS"
 }
 
 struct InnerTubeContext: Codable {
@@ -29,7 +32,11 @@ struct InnerTubeContext: Codable {
         let osName: String?
         let osVersion: String?
         let androidSdkVersion: String?
-        // Note: userAgent is sent as HTTP header only, NOT in request body (matching Android)
+        // VISIONOS exige userAgent/timeZone en el body (yt-dlp 2026.8.19)
+        let userAgent: String?
+        let timeZone: String?
+        let utcOffsetMinutes: Int?
+        // Note: other clients send userAgent as HTTP header only, NOT in request body
     }
 
     struct ThirdPartyInfo: Codable {
@@ -68,6 +75,7 @@ class InnerTubeClient {
         case .android: keyName = "ANDROID_API_KEY"
         case .androidMusic: keyName = "ANDROID_MUSIC_API_KEY"
         case .androidVR: keyName = "ANDROID_MUSIC_API_KEY"
+        case .visionOS: keyName = "IOS_API_KEY" // verificado: IOS key + VISIONOS ctx = OK
         }
 
         if let path = Bundle.main.path(forResource: "APIKeys", ofType: "plist"),
@@ -88,6 +96,7 @@ class InnerTubeClient {
         case .android: return "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
         case .androidMusic: return "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI"
         case .androidVR: return "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI"
+        case .visionOS: return "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
         }
     }
 
@@ -192,8 +201,19 @@ class InnerTubeClient {
         var osName: String? = nil
         var osVersion: String? = nil
         var androidSdkVersion: String? = nil
+        var bodyUserAgent: String? = nil
+        var timeZone: String? = nil
+        var utcOffsetMinutes: Int? = nil
 
         switch clientType {
+        case .visionOS:
+            deviceMake = "Apple"
+            deviceModel = "RealityDevice17,1"
+            osName = "visionOS"
+            osVersion = "26.5.23O471"
+            bodyUserAgent = getClientInfo(for: clientType).2
+            timeZone = "UTC"
+            utcOffsetMinutes = 0
         case .ios:
             deviceMake = "Apple"
             deviceModel = "iPhone16,2"  // iPhone 15 Pro
@@ -232,7 +252,10 @@ class InnerTubeClient {
                 deviceModel: deviceModel,
                 osName: osName,
                 osVersion: osVersion,
-                androidSdkVersion: androidSdkVersion
+                androidSdkVersion: androidSdkVersion,
+                userAgent: bodyUserAgent,
+                timeZone: timeZone,
+                utcOffsetMinutes: utcOffsetMinutes
             ),
             thirdParty: thirdParty,
             request: InnerTubeContext.RequestInfo(
@@ -267,6 +290,9 @@ class InnerTubeClient {
             return ("ANDROID_MUSIC", "8.23.33", "com.google.android.apps.youtube.music/8.23.33 (Linux; U; Android 14; Pixel 8 Build/UP1A.231005.007) gzip")
         case .androidVR:
             return ("ANDROID_VR", "1.57.08", "com.google.android.apps.youtube.vr.oculus/1.57.08 (Linux; U; Android 14; Quest 3; Build/UKQ1.231005.007; Cronet/118.0.5993.111)")
+        case .visionOS:
+            // yt-dlp 2026.8.19: único cliente con URLs sin throttling de 1MB
+            return ("VISIONOS", "1.02", "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")
         }
     }
 
@@ -288,25 +314,36 @@ class InnerTubeClient {
         // Headers EXACTOS de InnerTune-Android (z-huang/InnerTune InnerTube.kt):
         // - x-origin siempre, Referer SOLO para WEB_REMIX/WEB_CREATOR, SIN Origin, SIN X-Goog-AuthUser/Visitor-Id.
         // Nuestros extras (Origin, X-Origin mayúscula, Referer en IOS/ANDROID) provocaban 401 sistemático.
+        // EXCEPCIÓN VISIONOS: réplica exacta verificada de yt-dlp (Origin www + Visitor-Id,
+        // Client-Name numérico 101, SIN x-origin ni Referer). Cualquier otra combo da LOGIN_REQUIRED.
         let (clientName, clientVersion, userAgent) = getClientInfo(for: clientType)
-        request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
-        request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
-        request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
-        request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
-        if clientType == .webRemix || clientType == .webCreator || clientType == .web {
-            request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        if clientType == .visionOS {
+            request.setValue("101", forHTTPHeaderField: "X-YouTube-Client-Name")
+            request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
+            request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+            request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
+            request.setValue(visitorData ?? defaultVisitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        } else {
+            request.setValue(clientName, forHTTPHeaderField: "X-YouTube-Client-Name")
+            request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
+            request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+            request.setValue("https://music.youtube.com", forHTTPHeaderField: "x-origin")
+            if clientType == .webRemix || clientType == .webCreator || clientType == .web {
+                request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+            }
         }
 
         // CRITICAL: User-Agent header
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
-        // Send cookies for authenticated requests – but NOT for player with ANDROID/IOS
-        // (player with ANDROID/IOS works without auth and 403 with stale SAPISIDHASH; see logs client=auth -> 403)
+        // Send cookies for authenticated requests – but NOT for player with ANDROID/IOS/VISIONOS
+        // (player with ANDROID/IOS works without auth and 403 with stale SAPISIDHASH; see logs client=auth -> 403.
+        // VISIONOS+Bearer da 400 como el resto de no-TV; sus URLs públicas no necesitan auth.)
         // forceNoAuth permite reintentos sin auth aunque haya sesión (fallback H1)
         let shouldSendAuth = {
             if forceNoAuth { return false }
             if !isAuthenticated { return false }
-            if endpoint == "player" && (clientType == .android || clientType == .ios) {
+            if endpoint == "player" && (clientType == .android || clientType == .ios || clientType == .visionOS) {
                 return false
             }
             return true

@@ -296,15 +296,17 @@ class YouTubeMusic {
         // ANDROID/IOS van sin auth (shouldSendAuth=false) y tiran 206 aunque estés logueado.
         var clients: [InnerTubeClientType] = []
         if client.hasBearer && !client.hasCookieAuth {
-            // Bearer-only (OAuth sin cookies): el token del device-flow TV solo lo acepta
-            // el cliente TV. androidMusic/webRemix/ios+Bearer dan 400 sistemático.
+            // Bearer-only (OAuth sin cookies): VISIONOS primero (URLs sin throttling 1MB),
+            // luego TV (único que aceptaba el token). androidMusic/webRemix/ios+Bearer = 400.
             // android/ios van sin auth (buildRequest los excluye) como fallback público.
-            clients.append(contentsOf: [.tv, .tvEmbedded, .android, .ios, .webRemix, .web])
+            clients.append(contentsOf: [.visionOS, .tv, .tvEmbedded, .android, .ios, .webRemix, .web])
         } else if client.isAuthenticated {
-            clients.append(contentsOf: [.androidMusic, .android, .ios, .webRemix, .tvEmbedded, .web])
+            // VISIONOS primero: sus URLs no sufren el muro de 1MB (verificado).
+            // androidMusic conserva prioridad para contenido restringido si VISIONOS falla.
+            clients.append(contentsOf: [.visionOS, .androidMusic, .android, .ios, .webRemix, .tvEmbedded, .web])
         } else {
-            // Unauthenticated: ANDROID permite 1.7M con 200k, IOS throttlea
-            clients.append(contentsOf: [.android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
+            // Unauthenticated: VISIONOS (sin throttling) > ANDROID (capado a 1MB)
+            clients.append(contentsOf: [.visionOS, .android, .ios, .tvEmbedded, .androidVR, .webRemix, .web])
         }
 
         var lastError: Error?
@@ -473,7 +475,9 @@ class YouTubeMusic {
         // Una URL SIN `n` no sufre throttling: es el caso bueno, no hay que "buscar" una con `n`.
         var (finalUrl, deciphered) = await ThrottlingDecipher.shared.deobfuscate(url: baseUrl, playerResponse: assetsResponse)
         await MainActor.run { DebugLogger.shared.log("🔍 streamUrl \(usedClientType) hasN=\(finalUrl.contains("n=")) deciphered=\(deciphered) itag=\(bestFormat.itag ?? 0)") }
-        if finalUrl.contains("n=") && !deciphered,
+        // VISIONOS queda EXCLUIDO del fallback: su `n` es válido (verificado: descarga
+        // completa). Cambiarlo por una URL android sin `n` REINTRODUCIRÍA el muro de 1MB.
+        if usedClientType != .visionOS, finalUrl.contains("n=") && !deciphered,
            let nfree = await fetchNFreeAudioUrl(videoId: videoId) {
             finalUrl = nfree
             await MainActor.run { DebugLogger.shared.log("✅ streamUrl usando alternativa sin `n` (sin throttling)") }
@@ -543,10 +547,12 @@ class YouTubeMusic {
             throw InnerTubeError.invalidResponse
         }
 
-        // Misma protección anti-throttling que streaming: `n` sin decodificar → 403 ~1MB
+        // Misma protección anti-throttling que streaming (`n` sin decodificar → 403 ~1MB),
+        // excepto VISIONOS cuyo `n` es válido (verificado: descarga completa).
         let (det, ok) = await ThrottlingDecipher.shared.deobfuscate(url: url, playerResponse: playerResponse)
         url = det
-        if url.contains("n=") && !ok, let nfree = await fetchNFreeAudioUrl(videoId: videoId) {
+        if usedClientType != .visionOS, url.contains("n=") && !ok,
+           let nfree = await fetchNFreeAudioUrl(videoId: videoId) {
             url = nfree
         }
         if !url.contains("ratebypass") {
