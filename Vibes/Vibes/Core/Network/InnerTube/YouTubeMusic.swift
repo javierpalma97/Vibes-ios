@@ -809,6 +809,15 @@ class YouTubeMusic {
         throw lastErr
     }
 
+    /// Raw PÚBLICO sin auth (webRemix): para fallbacks de contenido público cuando
+    /// hay sesión pero el raw autenticado falla (p. ej. Bearer 400s).
+    func browseRawPublic(browseId: String) async throws -> [String: Any] {
+        let body: [String: Any] = ["browseId": browseId]
+        return try await client.makeRawRequest(
+            endpoint: "browse", body: body, clientType: .webRemix, forceNoAuth: true
+        )
+    }
+
     static func deepKeys(_ node: Any, depth: Int) -> [String] {
         guard depth > 0 else { return [] }
         var result: [String] = []
@@ -979,7 +988,11 @@ class YouTubeMusic {
     func getAlbum(browseId: String) async throws -> (YTAlbum, [YTSong]) {
         let response: BrowseResponse
         if client.isAuthenticated {
-            response = (try? await browseAuthenticated(browseId: browseId)) ?? (try await browse(browseId: browseId))
+            do {
+                response = try await browseAuthenticated(browseId: browseId)
+            } catch {
+                response = try await browse(browseId: browseId)
+            }
         } else {
             response = try await browse(browseId: browseId)
         }
@@ -1146,9 +1159,16 @@ class YouTubeMusic {
         // Raw fallback if structured response didn't yield songs
         if songs.isEmpty {
             do {
-                let raw = client.isAuthenticated
-                    ? (try? await browseRawAuthenticated(browseId: browseId)) ?? (try await browseRaw(browseId: browseId))
-                    : try await browseRaw(browseId: browseId)
+                let raw: [String: Any]
+                if client.isAuthenticated {
+                    do {
+                        raw = try await browseRawAuthenticated(browseId: browseId)
+                    } catch {
+                        raw = try await browseRawPublic(browseId: browseId)
+                    }
+                } else {
+                    raw = try await browseRawPublic(browseId: browseId)
+                }
                 let rawList = rawSongs(raw)
                 if !rawList.isEmpty {
                     await MainActor.run { DebugLogger.shared.log("📀 raw fallback album \(browseId) songs=\(rawList.count)") }
@@ -1718,7 +1738,11 @@ class YouTubeMusic {
     func getArtist(browseId: String) async throws -> ArtistPage {
         let response: BrowseResponse
         if client.isAuthenticated {
-            response = (try? await browseAuthenticated(browseId: browseId)) ?? (try await browse(browseId: browseId))
+            do {
+                response = try await browseAuthenticated(browseId: browseId)
+            } catch {
+                response = try await browse(browseId: browseId)
+            }
         } else {
             response = try await browse(browseId: browseId)
         }
@@ -1729,9 +1753,16 @@ class YouTubeMusic {
 
         // Raw fallback if structured response didn't yield sections
         do {
-            let raw = client.isAuthenticated
-                ? (try? await browseRawAuthenticated(browseId: browseId)) ?? (try await browseRaw(browseId: browseId))
-                : try await browseRaw(browseId: browseId)
+            let raw: [String: Any]
+            if client.isAuthenticated {
+                do {
+                    raw = try await browseRawAuthenticated(browseId: browseId)
+                } catch {
+                    raw = try await browseRawPublic(browseId: browseId)
+                }
+            } else {
+                raw = try await browseRawPublic(browseId: browseId)
+            }
             let rawLists = rawPlaylists(raw)
             let rawSongList = rawSongs(raw)
             var items: [HomeItem] = []
