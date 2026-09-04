@@ -972,7 +972,12 @@ class YouTubeMusic {
     }
 
     func getAlbum(browseId: String) async throws -> (YTAlbum, [YTSong]) {
-        let response = try await browse(browseId: browseId)
+        let response: BrowseResponse
+        if client.isAuthenticated {
+            response = (try? await browseAuthenticated(browseId: browseId)) ?? (try await browse(browseId: browseId))
+        } else {
+            response = try await browse(browseId: browseId)
+        }
 
         // Try different header types
         var headerTitle: String = ""
@@ -1132,9 +1137,22 @@ class YouTubeMusic {
                 }
             }
         }
+
+        // Raw fallback if structured response didn't yield songs
+        if songs.isEmpty {
+            do {
+                let raw = client.isAuthenticated
+                    ? (try? await browseRawAuthenticated(browseId: browseId)) ?? (try await browseRaw(browseId: browseId))
+                    : try await browseRaw(browseId: browseId)
+                let rawList = rawSongs(raw)
+                if !rawList.isEmpty {
+                    await MainActor.run { DebugLogger.shared.log("📀 raw fallback album \(browseId) songs=\(rawList.count)") }
+                    songs = rawList
+                }
+            } catch {}
+        }
         
         // Inject album info (thumbnail, albumId, albumName) into each song
-        // Album songs often don't have their own thumbnail - use album's thumbnail
         let songsWithAlbumInfo = songs.map { song in
             YTSong(
                 id: song.id,
@@ -1624,8 +1642,39 @@ class YouTubeMusic {
     // MARK: - Artist Page
 
     func getArtist(browseId: String) async throws -> ArtistPage {
-        let response = try await browse(browseId: browseId)
-        return parseArtistPage(response, browseId: browseId)
+        let response: BrowseResponse
+        if client.isAuthenticated {
+            response = (try? await browseAuthenticated(browseId: browseId)) ?? (try await browse(browseId: browseId))
+        } else {
+            response = try await browse(browseId: browseId)
+        }
+        let page = parseArtistPage(response, browseId: browseId)
+        if !page.sections.isEmpty {
+            return page
+        }
+
+        // Raw fallback if structured response didn't yield sections
+        do {
+            let raw = client.isAuthenticated
+                ? (try? await browseRawAuthenticated(browseId: browseId)) ?? (try await browseRaw(browseId: browseId))
+                : try await browseRaw(browseId: browseId)
+            let rawLists = rawPlaylists(raw)
+            let rawSongList = rawSongs(raw)
+            var items: [HomeItem] = []
+            for s in rawSongList {
+                items.append(.song(s))
+            }
+            for pl in rawLists {
+                items.append(.playlist(pl))
+            }
+            if !items.isEmpty {
+                await MainActor.run { DebugLogger.shared.log("📀 raw fallback artist \(browseId) items=\(items.count)") }
+                let section = ArtistSection(title: "Top Songs & Albums", items: items, browseId: nil)
+                return ArtistPage(artist: page.artist, sections: [section], description: nil)
+            }
+        } catch {}
+
+        return page
     }
 
     private func parseArtistPage(_ response: BrowseResponse, browseId: String) -> ArtistPage {

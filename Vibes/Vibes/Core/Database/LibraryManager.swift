@@ -600,7 +600,7 @@ class LibraryManager: ObservableObject {
             // Not in database, fetch from YouTube
             do {
                 let rawId = playlist.browseId ?? playlist.id
-                let browseId = (rawId.hasPrefix("VL") || rawId.hasPrefix("PL") || rawId.hasPrefix("FEmusic_") || rawId == "VLLM" || rawId.hasPrefix("MPSP")) ? rawId : "VL\(rawId)"
+                let browseId = (rawId.hasPrefix("VL") || rawId.hasPrefix("PL") || rawId.hasPrefix("FEmusic_") || rawId == "VLLM" || rawId == "SE" || rawId.hasPrefix("RD") || rawId.hasPrefix("MPREb_") || rawId.hasPrefix("MPSP") || rawId.hasPrefix("UC")) ? rawId : "VL\(rawId)"
                 let (ytPlaylist, ytSongs) = try await ytMusic.getPlaylist(browseId: browseId)
 
                 // Update the playlist in database with correct song count

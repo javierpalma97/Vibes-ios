@@ -125,7 +125,7 @@ struct YTPlaylistDetailView: View {
             } else {
                 // Regular playlist - use browse endpoint
                 let id = ytPlaylist.id
-                let browseId = (id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("FEmusic_") || id == "VLLM" || id.hasPrefix("MPSP")) ? id : "VL\(id)"
+                let browseId = (id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("FEmusic_") || id == "VLLM" || id == "SE" || id.hasPrefix("RD") || id.hasPrefix("MPREb_") || id.hasPrefix("MPSP") || id.hasPrefix("UC")) ? id : "VL\(id)"
                 print("🎵 [Playlist] Regular playlist, using browseId: \(browseId)")
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
