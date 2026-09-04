@@ -692,11 +692,11 @@ class YouTubeMusic {
         let bearer = client.hasBearer, cookies = client.hasCookieAuth
         let attempts: [(InnerTubeClientType, Bool)]
         if bearer && !cookies {
-            attempts = [(.tv, false), (.androidMusic, false), (.ios, false), (.webRemix, false)]
+            attempts = [(.tv, false)]
         } else if cookies && !bearer {
             attempts = [(.webRemix, false), (.androidMusic, false), (.ios, false)]
         } else {
-            attempts = [(.webRemix, false), (.tv, false), (.androidMusic, false), (.ios, false)]
+            attempts = [(.tv, false), (.webRemix, false), (.androidMusic, false), (.ios, false)]
         }
         var lastErr: Error = InnerTubeError.authenticationExpired
         for (ctype, noAuth) in attempts {
@@ -712,8 +712,11 @@ class YouTubeMusic {
                     lastErr = InnerTubeError.authenticationExpired
                     continue
                 }
-                // Ensure the response contains actual media items; if empty, try next client
-                if resp.contents == nil {
+                // Check if response has any content
+                let hasTypedContent = resp.contents?.singleColumnBrowseResultsRenderer != nil
+                    || resp.contents?.twoColumnBrowseResultsRenderer != nil
+                    || resp.contents?.sectionListRenderer != nil
+                if !hasTypedContent && resp.contents == nil {
                     await MainActor.run { DebugLogger.shared.log("⚠️ browseAuth \(browseId) via \(ctype) returned empty result, trying next client") }
                     lastErr = InnerTubeError.authenticationExpired
                     continue
@@ -755,14 +758,13 @@ class YouTubeMusic {
     }
 
     /// Raw auth (TV primero) para parseo genérico cuando el modelo tipado no cubre el shape TV.
-    /// Tu log: browseAuth VLLM/FEmusic_liked_playlists OK via tv (200) pero getLikedSongs invalidResponse = contents nil.
     func browseRawAuthenticated(browseId: String) async throws -> [String: Any] {
         let body: [String: Any] = ["browseId": browseId]
         var lastErr: Error = InnerTubeError.authenticationExpired
         let bearer = client.hasBearer, cookies = client.hasCookieAuth
         let order: [InnerTubeClientType]
         if bearer && !cookies {
-            order = [.tv, .androidMusic, .ios, .webRemix]
+            order = [.tv]
         } else if cookies && !bearer {
             order = [.webRemix, .androidMusic, .ios]
         } else {
@@ -869,7 +871,8 @@ class YouTubeMusic {
             }
 
             guard let bid = browseId else { return }
-            guard bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "FEmusic_liked_playlists" else { return }
+            if bid == "FEmusic_liked_playlists" || bid == "FEmusic_history" || bid == "FEmusic_explore" { return }
+            guard bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "SE" else { return }
 
             var title = rawTexts(d["title"]).joined()
             if title.isEmpty { title = rawTexts(d["header"]).joined() }

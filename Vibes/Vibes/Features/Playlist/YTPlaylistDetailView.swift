@@ -122,14 +122,13 @@ struct YTPlaylistDetailView: View {
                 print("🎵 [Playlist] Radio playlist (from RD prefix), using id as playlistId")
                 songs = try await ytMusic.getRadioPlaylist(playlistId: ytPlaylist.id)
                 print("🎵 [Playlist] Loaded \(songs.count) radio songs")
-            } else {
                 // Regular playlist - use browse endpoint
-                let browseId = ytPlaylist.id.hasPrefix("VL") ? ytPlaylist.id : "VL\(ytPlaylist.id)"
+                let id = ytPlaylist.id
+                let browseId = (id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("FEmusic_") || id == "VLLM" || id.hasPrefix("MPSP")) ? id : "VL\(id)"
                 print("🎵 [Playlist] Regular playlist, using browseId: \(browseId)")
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
                 print("🎵 [Playlist] Loaded \(songs.count) songs")
-            }
         } catch {
             print("❌ [Playlist] Error loading playlist: \(error)")
             errorMessage = "Failed to load playlist"
