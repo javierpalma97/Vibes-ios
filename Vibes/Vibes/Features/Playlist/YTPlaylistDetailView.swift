@@ -109,11 +109,17 @@ struct YTPlaylistDetailView: View {
         errorMessage = nil
 
         do {
-            dlog("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
+            print("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
             await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist start id=\(ytPlaylist.id) nombre=\(ytPlaylist.name)") }
 
+            // Solo es radio si el id NO es navegable (RD...). Las cards (charts etc.)
+            // traen playlistId del botón play pero se ABREN por browse (VL...).
+            let id = ytPlaylist.id
+            let isBrowsable = id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("OLAK")
+                || id.hasPrefix("FEmusic_") || id == "VLLM" || id == "SE"
+                || id.hasPrefix("MPREb_") || id.hasPrefix("MPSP") || id.hasPrefix("UC")
             // Check if this is a radio/mix playlist
-            if let playlistId = ytPlaylist.playlistId {
+            if let playlistId = ytPlaylist.playlistId, !isBrowsable {
                 // Radio playlist - use next endpoint with playlistId
                 dlog("🎵 [Playlist] Radio playlist detected, using playlistId: \(playlistId)")
                 songs = try await ytMusic.getRadioPlaylist(playlistId: playlistId)
@@ -124,9 +130,8 @@ struct YTPlaylistDetailView: View {
                 songs = try await ytMusic.getRadioPlaylist(playlistId: ytPlaylist.id)
                 dlog("🎵 [Playlist] Loaded \(songs.count) radio songs")
             } else {
-                // Regular playlist - use browse endpoint
-                let id = ytPlaylist.id
-                let browseId = (id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("FEmusic_") || id == "VLLM" || id == "SE" || id.hasPrefix("RD") || id.hasPrefix("MPREb_") || id.hasPrefix("MPSP") || id.hasPrefix("UC")) ? id : "VL\(id)"
+                // Regular playlist - use browse endpoint (VL requerido por el servidor)
+                let browseId = isBrowsable ? id : "VL\(id)"
                 dlog("🎵 [Playlist] Regular playlist, using browseId: \(browseId)")
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
