@@ -299,7 +299,7 @@ class YouTubeMusic {
             // Bearer-only (OAuth without cookies): TV client supports bearer,
             // then TVEmbedded, VisionOS as public fallback, then Android, iOS, and generic Web client.
             // Exclude clients that reject bearer (webRemix, androidMusic, ios with bearer).
-            clients.append(contentsOf: [.tv, .tvEmbedded, .visionOS, .android, .ios, .web])
+            clients.append(contentsOf: [.tv, .tvEmbedded, .visionOS, .android, .ios])
         } else if client.isAuthenticated {
             // VISIONOS primero: sus URLs no sufren el muro de 1MB (verificado).
             // androidMusic conserva prioridad para contenido restringido si VISIONOS falla.
