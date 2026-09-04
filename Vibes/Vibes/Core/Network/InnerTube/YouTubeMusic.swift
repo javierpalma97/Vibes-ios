@@ -258,7 +258,7 @@ class YouTubeMusic {
                 return nil
             }
 
-            let id = browseId.hasPrefix("VL") ? String(browseId.dropFirst(2)) : browseId
+            let id = stripVL(browseId)
 
             // For search results, we don't have access to thumbnailOverlay, so playlistId will be nil
             // We'll handle radio playlists in the detail view using the id
@@ -898,7 +898,7 @@ class YouTubeMusic {
             if title.isEmpty, let t = d["title"] as? String { title = t }
             if title.isEmpty { return }
 
-            let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+            let pid = bid.hasPrefix("VL") ? stripVL(bid) : bid
             guard !seen.contains(pid) else { return }
             seen.insert(pid)
 
@@ -2058,8 +2058,7 @@ class YouTubeMusic {
                 return nil
             }
 
-            // Remove "VL" prefix if present (matches Android implementation)
-            let id = browseId.hasPrefix("VL") ? String(browseId.dropFirst(2)) : browseId
+            let id = stripVL(browseId)
 
             // Extract playlistId from play button for radio playlists
             let playlistId = item.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?
@@ -2351,7 +2350,7 @@ class YouTubeMusic {
             let tiles = await rawTvTabTiles(raw, tabIds: ["FEmusic_liked_playlists"], titleHints: ["playlist"])
             for t in tiles {
                 guard let bid = t.browseId, (bid.hasPrefix("VL") || bid.hasPrefix("PL")) else { continue }
-                let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+                let pid = bid.hasPrefix("VL") ? stripVL(bid) : bid
                 if !merged.contains(where: { $0.id == pid }) {
                     merged.append(YTPlaylist(id: pid, name: t.title, author: t.subtitle.isEmpty ? nil : t.subtitle, thumbnailUrl: t.thumb, songCount: 0, playlistId: nil))
                 }
@@ -2544,6 +2543,21 @@ class YouTubeMusic {
         var sections: [ChartSection] = []
 
         for sectionContent in sectionContents {
+            // musicShelfRenderer (Top songs): items directos
+            if let shelf = sectionContent.musicShelfRenderer,
+               let shelfContents = shelf.contents {
+                var items: [HomeItem] = []
+                for wrapper in shelfContents {
+                    if let item = wrapper.musicResponsiveListItemRenderer,
+                       let result = parseSearchItem(item) {
+                        items.append(homeItem(from: result))
+                    }
+                }
+                if !items.isEmpty {
+                    let title = shelf.title?.combined ?? "Top songs"
+                    sections.append(ChartSection(title: title, items: items))
+                }
+            }
             if let carouselShelf = sectionContent.musicCarouselShelfRenderer {
                 let title = carouselShelf.header?.musicCarouselShelfBasicHeaderRenderer?.title?.combined ?? ""
                 var items: [HomeItem] = []
@@ -2553,6 +2567,10 @@ class YouTubeMusic {
                         if let itemRenderer = content.musicTwoRowItemRenderer,
                            let item = parseHomeItem(itemRenderer) {
                             items.append(item)
+                        } else if let listItem = content.musicResponsiveListItemRenderer,
+                           let result = parseSearchItem(listItem) {
+                            // Top artists: listItems dentro del carousel
+                            items.append(homeItem(from: result))
                         }
                     }
                 }
@@ -2564,6 +2582,27 @@ class YouTubeMusic {
         }
 
         return ChartsPage(sections: sections)
+    }
+
+    private func homeItem(from result: SearchResult) -> HomeItem {
+        switch result {
+        case .song(let s): return .song(s)
+        case .album(let a): return .album(a)
+        case .artist(let a): return .artist(a)
+        case .playlist(let p): return .playlist(p)
+        }
+    }
+
+    /// Quita el prefijo VL solo cuando deja un PL... válido. Los charts oficiales
+    /// usan VLOLAK... (verificado) y el servidor los espera íntegros.
+    private func stripVL(_ bid: String) -> String {
+        if bid.hasPrefix("VL") {
+            let rest = String(bid.dropFirst(2))
+            if rest.hasPrefix("PL") { return rest }
+            if rest.hasPrefix("OLAK") { return bid }
+            return rest
+        }
+        return bid
     }
 
     /// Charts desde JSON genérico: agrupa musicTwoRowItemRenderer por su carousel/header.
@@ -2766,7 +2805,7 @@ class YouTubeMusic {
         let subtitle = rawTexts(d["subtitle"]).joined(separator: " ")
         let thumb = rawThumb(d["thumbnailRenderer"]) ?? rawThumb(d["thumbnail"])
         if bid.hasPrefix("VL") || bid.hasPrefix("PL") {
-            let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+            let pid = bid.hasPrefix("VL") ? stripVL(bid) : bid
             return .playlist(YTPlaylist(id: pid, name: title, author: subtitle.isEmpty ? nil : subtitle, thumbnailUrl: thumb, songCount: 0, playlistId: nil))
         } else if bid.hasPrefix("MPRE") {
             return .album(YTAlbum(id: bid, title: title, artists: subtitle, year: nil, thumbnailUrl: thumb))

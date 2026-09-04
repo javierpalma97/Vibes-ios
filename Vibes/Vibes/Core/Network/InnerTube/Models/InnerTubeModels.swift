@@ -614,6 +614,8 @@ struct MusicCarouselShelfRenderer: Codable {
     struct Content: Codable {
         let musicTwoRowItemRenderer: MusicTwoRowItemRenderer?
         let musicNavigationButtonRenderer: MusicNavigationButtonRenderer?
+        // Top artists y otros carousels traen listItems directos (verificado charts)
+        let musicResponsiveListItemRenderer: MusicShelfRenderer.MusicResponsiveListItemRenderer?
 
         struct MusicTwoRowItemRenderer: Codable {
             let title: YTText?
