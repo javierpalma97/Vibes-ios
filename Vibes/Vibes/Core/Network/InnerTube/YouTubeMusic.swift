@@ -872,7 +872,10 @@ class YouTubeMusic {
 
             guard let bid = browseId else { return }
             if bid == "FEmusic_liked_playlists" || bid == "FEmusic_history" || bid == "FEmusic_explore" { return }
-            guard bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "SE" else { return }
+
+            // Playlist IDs start with VL, PL, MPSP, RD, UC, VLLM, or SE or length != 11
+            let isPlaylist = bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "SE" || bid.hasPrefix("RD") || bid.count != 11
+            guard isPlaylist else { return }
 
             var title = rawTexts(d["title"]).joined()
             if title.isEmpty { title = rawTexts(d["header"]).joined() }
@@ -900,30 +903,33 @@ class YouTubeMusic {
         var seen = Set<String>()
         walk(root) { d in
             var vid: String?
-            // 0. contentId (TV tileRenderer)
-            if let cid = d["contentId"] as? String, (cid.count == 11 || d["tileRenderer"] != nil) {
-                vid = cid
+            // 0. contentId or videoId (MUST be 11 chars long for a YouTube video!)
+            if let cid = (d["videoId"] ?? d["contentId"]) as? String {
+                let isPlaylistId = cid.hasPrefix("PL") || cid.hasPrefix("VL") || cid.hasPrefix("MPSP") || cid.hasPrefix("RD") || cid.hasPrefix("UC") || cid == "VLLM" || cid == "FEmusic_liked_playlists"
+                if cid.count == 11 && !isPlaylistId {
+                    vid = cid
+                }
             }
             // 1. overlay.playNavigationEndpoint.watchEndpoint.videoId
             if vid == nil, let ov = ((d["overlay"] as? [String: Any])?["musicItemThumbnailOverlayRenderer"] as? [String: Any])?["content"] as? [String: Any],
                let pb = ov["musicPlayButtonRenderer"] as? [String: Any],
                let pne = pb["playNavigationEndpoint"] as? [String: Any],
                let we = pne["watchEndpoint"] as? [String: Any],
-               let v = we["videoId"] as? String { vid = v }
+               let v = we["videoId"] as? String, v.count == 11 { vid = v }
             // 2. playlistItemData.videoId
-            if vid == nil, let pid = d["playlistItemData"] as? [String: Any], let v = pid["videoId"] as? String { vid = v }
+            if vid == nil, let pid = d["playlistItemData"] as? [String: Any], let v = pid["videoId"] as? String, v.count == 11 { vid = v }
             // 3. navigationEndpoint.watchEndpoint.videoId
             if vid == nil, let nav = d["navigationEndpoint"] as? [String: Any],
                let we = nav["watchEndpoint"] as? [String: Any],
-               let v = we["videoId"] as? String { vid = v }
+               let v = we["videoId"] as? String, v.count == 11 { vid = v }
             // 4. playlistPanelVideoRenderer (TV/queue) or direct videoId
-            if vid == nil, let v = d["videoId"] as? String { vid = v }
+            if vid == nil, let v = d["videoId"] as? String, v.count == 11 { vid = v }
             // 4b. watchEndpoint under any *Endpoint key
             if vid == nil {
                 for (k, val) in d where k.hasSuffix("Endpoint") || k.hasSuffix("Command") {
                     if let ed = val as? [String: Any] {
                         if let we = (ed["watchEndpoint"] ?? ed["navigationEndpoint"]) as? [String: Any],
-                           let v = (we["videoId"] ?? we["contentId"]) as? String { vid = v; break }
+                           let v = (we["videoId"] ?? we["contentId"]) as? String, v.count == 11 { vid = v; break }
                     }
                 }
             }
