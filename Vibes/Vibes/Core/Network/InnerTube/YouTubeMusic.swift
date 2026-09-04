@@ -296,10 +296,10 @@ class YouTubeMusic {
         // ANDROID/IOS van sin auth (shouldSendAuth=false) y tiran 206 aunque estés logueado.
         var clients: [InnerTubeClientType] = []
         if client.hasBearer && !client.hasCookieAuth {
-            // Bearer-only (OAuth sin cookies): VISIONOS primero (URLs sin throttling 1MB),
-            // luego TV (único que aceptaba el token). androidMusic/webRemix/ios+Bearer = 400.
-            // android/ios van sin auth (buildRequest los excluye) como fallback público.
-            clients.append(contentsOf: [.visionOS, .tv, .tvEmbedded, .android, .ios, .webRemix, .web])
+            // Bearer-only (OAuth without cookies): TV client supports bearer,
+            // then TVEmbedded, VisionOS as public fallback, then Android, iOS, and generic Web client.
+            // Exclude clients that reject bearer (webRemix, androidMusic, ios with bearer).
+            clients.append(contentsOf: [.tv, .tvEmbedded, .visionOS, .android, .ios, .web])
         } else if client.isAuthenticated {
             // VISIONOS primero: sus URLs no sufren el muro de 1MB (verificado).
             // androidMusic conserva prioridad para contenido restringido si VISIONOS falla.
