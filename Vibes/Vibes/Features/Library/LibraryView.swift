@@ -90,6 +90,12 @@ struct LibraryView: View {
             } message: {
                 Text(syncError ?? "An error occurred")
             }
+            // Auto-sync al iniciar sesión (antes solo sincronizaba manual)
+            .onChange(of: authManager.isAuthenticated) { _, newValue in
+                if newValue && !isSyncing {
+                    syncLibrary()
+                }
+            }
         }
     }
 

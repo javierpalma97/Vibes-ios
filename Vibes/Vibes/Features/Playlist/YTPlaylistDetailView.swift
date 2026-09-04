@@ -130,6 +130,18 @@ struct YTPlaylistDetailView: View {
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
                 print("🎵 [Playlist] Loaded \(songs.count) songs")
+                // Persistir el conteo para que la lista muestre N canciones sin reabrir
+                if !songs.isEmpty {
+                    let updated = YTPlaylist(
+                        id: ytPlaylist.id,
+                        name: ytPlaylist.name,
+                        author: ytPlaylist.author,
+                        thumbnailUrl: ytPlaylist.thumbnailUrl,
+                        songCount: songs.count,
+                        playlistId: ytPlaylist.playlistId
+                    )
+                    await libraryManager.savePlaylist(updated)
+                }
             }
         } catch {
             print("❌ [Playlist] Error loading playlist: \(error)")
