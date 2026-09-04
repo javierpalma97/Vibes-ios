@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum PlayerBottomTab {
+    case upNext
+    case lyrics
+}
+
 struct PlayerView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var playerManager: PlayerManager
@@ -12,43 +17,21 @@ struct PlayerView: View {
     @State private var isDraggingSlider: Bool = false
     @State private var sliderValue: Double = 0
     @State private var showQueue: Bool = false
-    @State private var showingLyrics: Bool = false
+    @State private var bottomTab: PlayerBottomTab = .upNext
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Background gradient (dynamic theme)
-            themeManager.backgroundGradient
-                .ignoresSafeArea()
+        ZStack {
+            VibesColors.background.ignoresSafeArea()
 
-            VStack(spacing: 24) {
+            VStack(spacing: 0) {
                 // Header
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.down")
                             .font(.title2)
-                            .foregroundColor(.white)
+                            .foregroundColor(VibesColors.textPrimary)
                     }
-
                     Spacer()
-
-                    Text("Now Playing")
-                        .font(.headline)
-                        .foregroundColor(.white)
-
-                    Spacer()
-
-                    // Lyrics toggle button
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingLyrics.toggle()
-                        }
-                    }) {
-                        Image(systemName: showingLyrics ? "music.note.list" : "quote.bubble")
-                            .font(.title2)
-                            .foregroundColor(lyricsManager.currentLyrics != nil ? .white : .white.opacity(0.3))
-                    }
-                    .disabled(lyricsManager.currentLyrics == nil)
-
                     Menu {
                         if let song = playerManager.currentSong {
                             PlayerMenuContent(song: song)
@@ -56,201 +39,182 @@ struct PlayerView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.title2)
-                            .foregroundColor(.white)
+                            .foregroundColor(VibesColors.textPrimary)
                     }
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
 
-                Spacer()
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Artwork
+                        VibesArtwork(
+                            url: playerManager.currentSong?.thumbnailUrl,
+                            size: min(UIScreen.main.bounds.width - 120, 340),
+                            radius: 20
+                        )
+                        .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
+                        .padding(.top, 12)
 
-                // Album artwork or Lyrics view
-                ZStack {
-                    if showingLyrics {
-                        // Lyrics view
-                        LyricsView()
-                            .frame(width: UIScreen.main.bounds.width - 80, height: UIScreen.main.bounds.width - 80)
-                            .cornerRadius(20)
-                            .transition(.opacity)
-                    } else {
-                        // Album artwork
-                        AsyncImage(url: URL(string: playerManager.currentSong?.thumbnailUrl ?? "")) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                        }
-                        .frame(width: UIScreen.main.bounds.width - 80, height: UIScreen.main.bounds.width - 80)
-                        .cornerRadius(20)
-                        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
-                        .transition(.opacity)
-                    }
-                }
-                .onTapGesture {
-                    // Tap artwork/lyrics to toggle
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showingLyrics.toggle()
-                    }
-                }
-
-                Spacer()
-
-                // Song info
-                VStack(spacing: 8) {
-                    Text(playerManager.currentSong?.title ?? "")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-
-                    Text(playerManager.currentSong?.artistsText ?? "")
-                        .font(.body)
-                        .foregroundColor(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-                .padding(.horizontal)
-
-                // Audio output indicator
-                AudioOutputInfo()
-                    .padding(.bottom, 8)
-
-                // Action buttons
-                HStack(spacing: 24) {
-                    // Sleep Timer
-                    SleepTimerButton()
-                        .foregroundColor(.white)
-                        .frame(width: 44)
-
-                    Spacer()
-
-                    // Like button
-                    Button(action: {
-                        if let song = playerManager.currentSong {
-                            Task {
-                                await toggleLike(song: song)
+                        // Title + actions
+                        HStack(alignment: .center) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(playerManager.currentSong?.title ?? "")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(VibesColors.textPrimary)
+                                    .lineLimit(1)
+                                Text(playerManager.currentSong?.artistsText ?? "")
+                                    .font(.body)
+                                    .foregroundColor(VibesColors.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Button(action: {
+                                if let song = playerManager.currentSong {
+                                    Task {
+                                        await toggleLike(song: song)
+                                    }
+                                }
+                            }) {
+                                Image(systemName: playerManager.currentSong?.liked == true ? "heart.fill" : "heart")
+                                    .font(.title2)
+                                    .foregroundColor(playerManager.currentSong?.liked == true ? VibesColors.accent : VibesColors.textSecondary)
+                            }
+                            Button(action: {
+                                showQueue = true
+                            }) {
+                                Image(systemName: "list.bullet")
+                                    .font(.title2)
+                                    .foregroundColor(VibesColors.textSecondary)
                             }
                         }
-                    }) {
-                        Image(systemName: playerManager.currentSong?.liked == true ? "heart.fill" : "heart")
-                            .font(.title2)
-                            .foregroundColor(playerManager.currentSong?.liked == true ? .red : .white)
-                    }
-                    .frame(width: 44)
+                        .padding(.horizontal, 24)
 
-                    Spacer()
+                        // Progress
+                        VStack(spacing: 6) {
+                            Slider(
+                                value: $sliderValue,
+                                in: 0...max(playerManager.duration, 1),
+                                onEditingChanged: { editing in
+                                    isDraggingSlider = editing
+                                    if !editing {
+                                        playerManager.seek(to: sliderValue)
+                                    }
+                                }
+                            )
+                            .accentColor(VibesColors.accent)
 
-                    // AirPlay button
-                    AirPlayButton()
-                        .frame(width: 44, height: 44)
-
-                    Spacer()
-
-                    // Queue button
-                    Button(action: {
-                        showQueue = true
-                    }) {
-                        Image(systemName: "list.bullet")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                    }
-                    .frame(width: 44)
-                }
-                .padding(.horizontal, 32)
-
-                // Progress slider
-                VStack(spacing: 8) {
-                    Slider(
-                        value: $sliderValue,
-                        in: 0...max(playerManager.duration, 1),
-                        onEditingChanged: { editing in
-                            isDraggingSlider = editing
-                            if !editing {
-                                playerManager.seek(to: sliderValue)
+                            HStack {
+                                Text(formatTime(isDraggingSlider ? sliderValue : playerManager.currentTime))
+                                    .font(.caption)
+                                    .foregroundColor(VibesColors.textSecondary)
+                                Spacer()
+                                Text(formatTime(playerManager.duration))
+                                    .font(.caption)
+                                    .foregroundColor(VibesColors.textSecondary)
                             }
                         }
-                    )
-                    .accentColor(.white)
-
-                    HStack {
-                        Text(formatTime(isDraggingSlider ? sliderValue : playerManager.currentTime))
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.7))
-
-                        Spacer()
-
-                        Text(formatTime(playerManager.duration))
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
-                .padding(.horizontal)
-                .onChange(of: playerManager.currentTime) { oldValue, newValue in
-                    if !isDraggingSlider {
-                        sliderValue = newValue
-                    }
-                }
-
-                // Playback controls
-                HStack(spacing: 40) {
-                    // Shuffle
-                    Button(action: {
-                        queueManager.toggleShuffle()
-                    }) {
-                        Image(systemName: "shuffle")
-                            .font(.title3)
-                            .foregroundColor(playerManager.isShuffleEnabled ? .accentColor : .white.opacity(0.7))
-                    }
-
-                    // Previous
-                    Button(action: {
-                        playerManager.playPrevious()
-                    }) {
-                        Image(systemName: "backward.fill")
-                            .font(.title)
-                            .foregroundColor(.white)
-                    }
-
-                    // Play/Pause
-                    Button(action: {
-                        playerManager.togglePlayPause()
-                    }) {
-                        Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 72))
-                            .foregroundColor(.white)
-                    }
-
-                    // Next
-                    Button(action: {
-                        playerManager.playNext()
-                    }) {
-                        Image(systemName: "forward.fill")
-                            .font(.title)
-                            .foregroundColor(.white)
-                    }
-
-                    // Repeat
-                    Button(action: {
-                        switch playerManager.repeatMode {
-                        case .off:
-                            playerManager.repeatMode = .all
-                        case .all:
-                            playerManager.repeatMode = .one
-                        case .one:
-                            playerManager.repeatMode = .off
+                        .padding(.horizontal, 24)
+                        .onChange(of: playerManager.currentTime) { _, newValue in
+                            if !isDraggingSlider {
+                                sliderValue = newValue
+                            }
                         }
-                    }) {
-                        Image(systemName: repeatIcon)
-                            .font(.title3)
-                            .foregroundColor(playerManager.repeatMode != .off ? .accentColor : .white.opacity(0.7))
+
+                        // Controls
+                        HStack(spacing: 36) {
+                            Button(action: {
+                                queueManager.toggleShuffle()
+                            }) {
+                                Image(systemName: "shuffle")
+                                    .font(.title2)
+                                    .foregroundColor(playerManager.isShuffleEnabled ? VibesColors.accent : VibesColors.textTertiary)
+                            }
+
+                            Button(action: {
+                                playerManager.playPrevious()
+                            }) {
+                                Image(systemName: "backward.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(VibesColors.textPrimary)
+                            }
+
+                            Button(action: {
+                                playerManager.togglePlayPause()
+                            }) {
+                                Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.system(size: 76))
+                                    .foregroundColor(.white)
+                            }
+
+                            Button(action: {
+                                playerManager.playNext()
+                            }) {
+                                Image(systemName: "forward.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(VibesColors.textPrimary)
+                            }
+
+                            Button(action: {
+                                switch playerManager.repeatMode {
+                                case .off:
+                                    playerManager.repeatMode = .all
+                                case .all:
+                                    playerManager.repeatMode = .one
+                                case .one:
+                                    playerManager.repeatMode = .off
+                                }
+                            }) {
+                                Image(systemName: repeatIcon)
+                                    .font(.title2)
+                                    .foregroundColor(playerManager.repeatMode != .off ? VibesColors.accent : VibesColors.textTertiary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+
+                        // Secondary row
+                        HStack(spacing: 28) {
+                            SleepTimerButton()
+                                .foregroundColor(VibesColors.textSecondary)
+                            AirPlayButton()
+                                .frame(width: 44, height: 44)
+                            AudioOutputInfo()
+                        }
+
+                        // Bottom tabs: Up Next / Lyrics
+                        VStack(spacing: 0) {
+                            HStack(spacing: 0) {
+                                PlayerBottomTabButton(
+                                    title: "Up Next",
+                                    icon: "list.bullet",
+                                    selected: bottomTab == .upNext,
+                                    action: { bottomTab = .upNext }
+                                )
+                                PlayerBottomTabButton(
+                                    title: "Lyrics",
+                                    icon: "quote.bubble",
+                                    selected: bottomTab == .lyrics,
+                                    action: { bottomTab = .lyrics }
+                                )
+                            }
+                            .padding(.horizontal, 24)
+
+                            if bottomTab == .upNext {
+                                UpNextInline(onOpenQueue: { showQueue = true })
+                                    .padding(.top, 8)
+                            } else {
+                                LyricsView()
+                                    .frame(minHeight: 220)
+                                    .padding(.top, 8)
+                            }
+                        }
+                        .padding(.bottom, 30)
                     }
                 }
-                .padding(.horizontal)
-
-                Spacer()
             }
         }
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showQueue) {
             QueueView()
         }
@@ -280,6 +244,76 @@ struct PlayerView: View {
     }
 }
 
+// MARK: - Bottom tab button
+
+private struct PlayerBottomTabButton: View {
+    let title: String
+    let icon: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.caption)
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(selected ? .semibold : .regular)
+                }
+                .foregroundColor(selected ? VibesColors.textPrimary : VibesColors.textSecondary)
+                Rectangle()
+                    .fill(selected ? VibesColors.accent : Color.clear)
+                    .frame(height: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Inline Up Next
+
+private struct UpNextInline: View {
+    @EnvironmentObject var queueManager: QueueManager
+    let onOpenQueue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let upcoming = Array(queueManager.queue.dropFirst(max(queueManager.currentIndex + 1, 0)).prefix(5))
+            if upcoming.isEmpty {
+                Text("Queue is empty")
+                    .font(.subheadline)
+                    .foregroundColor(VibesColors.textSecondary)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, song in
+                    Button(action: {
+                        Task {
+                            await queueManager.playAt(index: queueManager.currentIndex + 1 + offset)
+                        }
+                    }) {
+                        VibesTrackRow(song: song)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button(action: onOpenQueue) {
+                    Text("Open full queue")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(VibesColors.accent)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Player Menu Content
 
 struct PlayerMenuContent: View {
@@ -289,7 +323,6 @@ struct PlayerMenuContent: View {
     @EnvironmentObject var libraryManager: LibraryManager
 
     var body: some View {
-        // Download option
         if downloadManager.isDownloaded(song.id) {
             Button(role: .destructive) {
                 downloadManager.deleteDownload(songId: song.id)

@@ -8,53 +8,68 @@ struct AccountView: View {
     @State private var ytPlaylists: [YTPlaylist] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var showSettings = false
 
     private let ytMusic = YouTubeMusic.shared
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Account Header
-                AccountHeader()
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    AccountHeader()
 
-                // Quick Actions
-                QuickActionsSection()
+                    QuickActionsSection()
 
-                // YouTube Playlists
-                if authManager.isAuthenticated {
-                    if isLoading {
-                        ProgressView()
-                            .padding(.top, 40)
-                    } else if let error = errorMessage {
-                        VStack(spacing: 16) {
-                            Text(error)
-                                .foregroundColor(.secondary)
+                    if authManager.isAuthenticated {
+                        if isLoading {
+                            ProgressView()
+                                .padding(.top, 40)
+                        } else if let error = errorMessage {
+                            VStack(spacing: 14) {
+                                Text(error)
+                                    .foregroundColor(VibesColors.textSecondary)
 
-                            Button("Retry") {
-                                Task {
-                                    await loadPlaylists()
+                                Button("Retry") {
+                                    Task {
+                                        await loadPlaylists()
+                                    }
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .tint(VibesColors.accent)
+                                .foregroundColor(.black)
                             }
-                            .buttonStyle(.bordered)
+                            .padding(.top, 40)
+                        } else if !ytPlaylists.isEmpty {
+                            YTPlaylistsSection(playlists: ytPlaylists)
                         }
-                        .padding(.top, 40)
-                    } else if !ytPlaylists.isEmpty {
-                        YTPlaylistsSection(playlists: ytPlaylists)
+                    } else {
+                        SignInPrompt()
                     }
-                } else {
-                    SignInPrompt()
-                }
 
-                Spacer(minLength: 120)
+                    Spacer(minLength: 140)
+                }
+                .padding(.top)
             }
-            .padding(.top)
-        }
-        .navigationTitle("Account")
-        .task {
-            if authManager.isAuthenticated {
-                await loadPlaylists()
-            } else {
-                isLoading = false
+            .vibesBackground()
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gearshape")
+                            .foregroundColor(VibesColors.textPrimary)
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            .task {
+                if authManager.isAuthenticated {
+                    await loadPlaylists()
+                } else {
+                    isLoading = false
+                }
             }
         }
     }
@@ -87,8 +102,7 @@ struct AccountHeader: View {
     @EnvironmentObject var authManager: AuthenticationManager
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Profile Picture
+        VStack(spacing: 12) {
             if let imageUrl = authManager.accountImageUrl, let url = URL(string: imageUrl) {
                 AsyncImage(url: url) { image in
                     image
@@ -96,35 +110,33 @@ struct AccountHeader: View {
                         .aspectRatio(contentMode: .fill)
                 } placeholder: {
                     Circle()
-                        .fill(Color.gray.opacity(0.3))
+                        .fill(VibesColors.elevated)
                 }
-                .frame(width: 100, height: 100)
+                .frame(width: 96, height: 96)
                 .clipShape(Circle())
             } else {
                 Image(systemName: "person.circle.fill")
                     .font(.system(size: 80))
-                    .foregroundColor(.gray)
+                    .foregroundColor(VibesColors.textTertiary)
             }
 
-            // Name
             Text(authManager.accountName ?? "Guest")
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(VibesColors.textPrimary)
 
-            // Email
             if let email = authManager.accountEmail {
                 Text(email)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textSecondary)
             }
 
-            // Sign Out Button
             if authManager.isAuthenticated {
                 Button("Sign Out") {
                     authManager.signOut()
                 }
                 .buttonStyle(.bordered)
-                .foregroundColor(.red)
+                .tint(.red)
             }
         }
         .padding()
@@ -139,6 +151,7 @@ struct QuickActionsSection: View {
             Text("Quick Actions")
                 .font(.title3)
                 .fontWeight(.semibold)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -146,24 +159,21 @@ struct QuickActionsSection: View {
                     NavigationLink(destination: HistoryView()) {
                         QuickActionCard(
                             icon: "clock.arrow.circlepath",
-                            title: "History",
-                            color: .blue
+                            title: "History"
                         )
                     }
 
                     NavigationLink(destination: StatsView()) {
                         QuickActionCard(
                             icon: "chart.bar.fill",
-                            title: "Stats",
-                            color: .pink
+                            title: "Stats"
                         )
                     }
 
                     NavigationLink(destination: SettingsView()) {
                         QuickActionCard(
                             icon: "gearshape.fill",
-                            title: "Settings",
-                            color: .gray
+                            title: "Settings"
                         )
                     }
                 }
@@ -176,20 +186,19 @@ struct QuickActionsSection: View {
 struct QuickActionCard: View {
     let icon: String
     let title: String
-    let color: Color
 
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundColor(.white)
+                .foregroundColor(VibesColors.accent)
                 .frame(width: 50, height: 50)
-                .background(color)
-                .cornerRadius(12)
+                .background(VibesColors.accentDim)
+                .cornerRadius(14)
 
             Text(title)
                 .font(.caption)
-                .foregroundColor(.primary)
+                .foregroundColor(VibesColors.textPrimary)
         }
         .frame(width: 70)
     }
@@ -201,16 +210,23 @@ struct YTPlaylistsSection: View {
     let playlists: [YTPlaylist]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Your YouTube Playlists")
                 .font(.title3)
                 .fontWeight(.semibold)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal)
 
             ForEach(playlists.indices, id: \.self) { index in
                 NavigationLink(destination: YTPlaylistDetailView(ytPlaylist: playlists[index])) {
                     YTPlaylistRow(playlist: playlists[index])
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
                 }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
             }
         }
     }
@@ -220,40 +236,11 @@ struct YTPlaylistRow: View {
     let playlist: YTPlaylist
 
     var body: some View {
-        HStack(spacing: 12) {
-            AsyncImage(url: URL(string: playlist.thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .frame(width: 56, height: 56)
-            .cornerRadius(8)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(playlist.name)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                if let author = playlist.author {
-                    Text(author)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 4)
+        VibesMediaRow(
+            artworkUrl: playlist.thumbnailUrl,
+            title: playlist.name,
+            subtitle: playlist.author ?? "Playlist"
+        )
     }
 }
 
@@ -263,17 +250,18 @@ struct SignInPrompt: View {
     @State private var showLogin = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             Image(systemName: "person.crop.circle.badge.questionmark")
                 .font(.system(size: 60))
-                .foregroundColor(.secondary)
+                .foregroundColor(VibesColors.textTertiary)
 
             Text("Sign in to YouTube Music")
                 .font(.headline)
+                .foregroundColor(VibesColors.textPrimary)
 
             Text("Access your playlists, liked songs, and listening history")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(VibesColors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
@@ -281,6 +269,8 @@ struct SignInPrompt: View {
                 showLogin = true
             }
             .buttonStyle(.borderedProminent)
+            .tint(VibesColors.accent)
+            .foregroundColor(.black)
         }
         .padding(.top, 40)
         .sheet(isPresented: $showLogin) {

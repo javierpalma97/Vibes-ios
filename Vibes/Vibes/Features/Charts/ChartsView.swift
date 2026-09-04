@@ -12,43 +12,50 @@ struct ChartsView: View {
 
     var body: some View {
         ScrollView {
-            if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 100)
-            } else if let error = errorMessage {
-                VStack(spacing: 16) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 24) {
+                if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                    } else if let error = errorMessage {
+                        VStack(spacing: 14) {
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .font(.largeTitle)
+                                .foregroundColor(VibesColors.textTertiary)
 
-                    Text(error)
-                        .foregroundColor(.secondary)
+                            Text(error)
+                                .foregroundColor(VibesColors.textSecondary)
 
-                    Button("Retry") {
-                        Task {
-                            await loadCharts()
+                            Button("Retry") {
+                                Task {
+                                    await loadCharts()
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(VibesColors.accent)
+                            .foregroundColor(.black)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    } else if let sections = chartsPage?.sections, !sections.isEmpty {
+                        ForEach(sections.indices, id: \.self) { index in
+                            ChartSectionView(section: sections[index])
+                        }
+                    } else {
+                        VibesEmptyState(icon: "chart.line.uptrend.xyaxis", title: "No charts available")
                     }
-                    .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 100)
-            } else if let sections = chartsPage?.sections {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    ForEach(sections.indices, id: \.self) { index in
-                        ChartSectionView(section: sections[index])
-                    }
-                }
-                .padding(.top)
-            }
 
-            Spacer(minLength: 120)
+                Spacer(minLength: 140)
+            }
+            .padding(.top)
         }
+        .vibesBackground()
         .navigationTitle("Charts")
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadCharts()
         }
+    }
     }
 
     private func loadCharts() async {
@@ -88,10 +95,11 @@ struct ChartSectionView: View {
             Text(section.title)
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     ForEach(section.items.indices, id: \.self) { index in
                         HomeItemView(item: section.items[index])
                     }

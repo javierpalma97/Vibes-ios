@@ -14,9 +14,21 @@ struct SearchView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Search field
+                VibesSearchBar(text: $searchQuery)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .onChange(of: searchQuery) { _, newValue in
+                        if !newValue.isEmpty {
+                            performSearch()
+                        } else {
+                            searchResults = []
+                        }
+                    }
+
                 // Search filters
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         FilterChip(title: "All", isSelected: selectedFilter == .all) {
                             selectedFilter = .all
                             performSearch()
@@ -46,35 +58,33 @@ struct SearchView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if searchQuery.isEmpty {
-                    // Show search history and recently played
                     SearchHistoryView(onSelect: { query in
                         searchQuery = query
                         performSearch()
                     })
                 } else if searchResults.isEmpty {
                     Text("No results found")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: 4) {
                             ForEach(Array(searchResults.enumerated()), id: \.offset) { index, result in
                                 SearchResultView(result: result, onSongTap: handleResultTap)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(VibesColors.card)
+                                    .cornerRadius(VibesRadius.row)
                             }
                         }
-                        .padding()
+                        .padding(.horizontal)
+                        .padding(.bottom, 140)
                     }
                 }
             }
+            .vibesBackground()
             .navigationTitle("Search")
-            .searchable(text: $searchQuery, prompt: "Search for songs, albums, artists...")
-            .onChange(of: searchQuery) { oldValue, newValue in
-                if !newValue.isEmpty {
-                    performSearch()
-                } else {
-                    searchResults = []
-                }
-            }
+            .navigationBarTitleDisplayMode(.large)
         }
     }
 
@@ -98,13 +108,11 @@ struct SearchView: View {
         Task {
             switch result {
             case .song(let song):
-                // Play song
                 dlog("🎵 [Search] Tapped song: \(song.title) (id: \(song.id))")
                 if let dbSong = await libraryManager.getSong(id: song.id) {
                     dlog("🎵 [Search] Found existing song in DB, playing...")
                     await queueManager.setQueue([dbSong])
                 } else {
-                    // Save song to database first
                     dlog("🎵 [Search] Song not in DB, saving first...")
                     await libraryManager.saveSong(song)
                     if let dbSong = await libraryManager.getSong(id: song.id) {
@@ -116,7 +124,6 @@ struct SearchView: View {
                 }
 
             case .album(let album):
-                // Load album and play
                 do {
                     let (_, songs) = try await ytMusic.getAlbum(browseId: album.id)
                     for song in songs {
@@ -129,7 +136,6 @@ struct SearchView: View {
                 }
 
             case .playlist(let playlist):
-                // Load playlist and play
                 do {
                     let (_, songs) = try await ytMusic.getPlaylist(browseId: playlist.id)
                     for song in songs {
@@ -142,8 +148,6 @@ struct SearchView: View {
                 }
 
             case .artist:
-                // Artist navigation is handled by NavigationLink in SearchResultView
-                // This case is intentionally empty as artists don't have a "play" action
                 break
             }
         }
@@ -194,41 +198,30 @@ struct SearchResultRowContent: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail
-            AsyncImage(url: URL(string: thumbnailUrl)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .frame(width: 56, height: 56)
-            .cornerRadius(resultType == "Artist" ? 28 : 8)
+            VibesArtwork(url: thumbnailUrl, size: 56, radius: resultType == "Artist" ? 28 : 8)
 
-            // Info
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.body)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                    .foregroundColor(VibesColors.textPrimary)
                     .lineLimit(2)
 
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textSecondary)
                     .lineLimit(1)
 
                 Text(resultType)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textTertiary)
             }
 
             Spacer()
 
             Image(systemName: resultType == "Song" ? "play.circle" : "chevron.right")
                 .font(.title3)
-                .foregroundColor(resultType == "Song" ? .accentColor : .secondary)
+                .foregroundColor(resultType == "Song" ? VibesColors.accent : VibesColors.textTertiary)
         }
         .padding(.vertical, 4)
     }
@@ -282,8 +275,8 @@ struct FilterChip: View {
                 .fontWeight(isSelected ? .semibold : .regular)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.accentColor : Color.gray.opacity(0.2))
-                .foregroundColor(isSelected ? .white : .primary)
+                .background(isSelected ? VibesColors.accent : VibesColors.elevated)
+                .foregroundColor(isSelected ? .black : VibesColors.textPrimary)
                 .cornerRadius(20)
         }
     }
@@ -299,13 +292,13 @@ struct SearchHistoryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                // Search History
                 if !libraryManager.searchHistory.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("Recent Searches")
                                 .font(.title3)
                                 .fontWeight(.bold)
+                                .foregroundColor(VibesColors.textPrimary)
 
                             Spacer()
 
@@ -313,36 +306,36 @@ struct SearchHistoryView: View {
                                 libraryManager.clearSearchHistory()
                             }
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(VibesColors.accent)
                         }
 
                         ForEach(libraryManager.searchHistory.prefix(10), id: \.id) { history in
                             Button(action: { onSelect(history.query) }) {
                                 HStack {
                                     Image(systemName: "clock.arrow.circlepath")
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(VibesColors.textSecondary)
 
                                     Text(history.query)
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(VibesColors.textPrimary)
 
                                     Spacer()
 
                                     Image(systemName: "arrow.up.left")
                                         .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(VibesColors.textSecondary)
                                 }
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .buttonStyle(.plain)
                         }
                     }
                 }
 
-                // Recently Played
                 if !libraryManager.recentlyPlayed.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Recently Played")
                             .font(.title3)
                             .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
 
                         ForEach(libraryManager.recentlyPlayed.prefix(10)) { song in
                             Button(action: {
@@ -350,37 +343,10 @@ struct SearchHistoryView: View {
                                     await queueManager.setQueue([song])
                                 }
                             }) {
-                                HStack(spacing: 12) {
-                                    AsyncImage(url: URL(string: song.thumbnailUrl ?? "")) { image in
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle()
-                                            .fill(Color.gray.opacity(0.3))
-                                    }
-                                    .frame(width: 48, height: 48)
-                                    .cornerRadius(6)
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(song.title)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                            .lineLimit(1)
-
-                                        Text(song.artistsText ?? "")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                    }
-
-                                    Spacer()
-
-                                    Image(systemName: "play.circle")
-                                        .foregroundColor(.accentColor)
-                                }
+                                VibesTrackRow(song: song)
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .buttonStyle(.plain)
+                            .songContextMenu(song: song)
                         }
                     }
                 }
@@ -397,68 +363,56 @@ struct SearchHistoryView: View {
 struct SearchSongRow: View {
     let ytSong: YTSong
     let onTap: () -> Void
-    
+
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var queueManager: QueueManager
     @State private var song: Song?
     @State private var showAddToPlaylist = false
     @State private var showShareSheet = false
-    
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // Thumbnail
-                AsyncImage(url: URL(string: ytSong.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 56, height: 56)
-                .cornerRadius(8)
-                
-                // Info
+                VibesArtwork(url: ytSong.thumbnailUrl, size: 56, radius: 8)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(ytSong.title)
                         .font(.body)
                         .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .foregroundColor(VibesColors.textPrimary)
                         .lineLimit(2)
-                    
+
                     Text(ytSong.artists)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                         .lineLimit(1)
-                    
+
                     Text("Song")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textTertiary)
                 }
-                
+
                 Spacer()
-                
-                // Download indicator
+
                 if let song = song {
                     DownloadStatusIndicator(songId: song.id)
                         .padding(.trailing, 8)
                 }
             }
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
         .contextMenu {
             if let song = song {
                 Button(action: { queueManager.insertNext(song) }) {
                     Label("Play Next", systemImage: "text.insert")
                 }
-                
+
                 Button(action: { queueManager.addToQueue(song) }) {
                     Label("Add to Queue", systemImage: "text.append")
                 }
-                
+
                 Divider()
-                
+
                 Button(action: { downloadSong() }) {
                     if DownloadManager.shared.isDownloaded(song.id) {
                         Label("Remove Download", systemImage: "trash")
@@ -466,11 +420,11 @@ struct SearchSongRow: View {
                         Label("Download", systemImage: "arrow.down.circle")
                     }
                 }
-                
+
                 Button(action: { showAddToPlaylist = true }) {
                     Label("Add to Playlist", systemImage: "plus.rectangle.on.folder")
                 }
-                
+
                 Button(action: { toggleLike() }) {
                     if song.liked {
                         Label("Remove from Liked", systemImage: "heart.slash")
@@ -478,9 +432,9 @@ struct SearchSongRow: View {
                         Label("Add to Liked", systemImage: "heart")
                     }
                 }
-                
+
                 Divider()
-                
+
                 Button(action: { showShareSheet = true }) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
@@ -499,12 +453,11 @@ struct SearchSongRow: View {
             }
         }
         .task {
-            // Save song to database so we can download it
             await libraryManager.saveSong(ytSong)
             song = await libraryManager.getSong(id: ytSong.id)
         }
     }
-    
+
     private func downloadSong() {
         guard let song = song else { return }
         Task {
@@ -515,7 +468,7 @@ struct SearchSongRow: View {
             }
         }
     }
-    
+
     private func toggleLike() {
         guard let song = song else { return }
         Task {

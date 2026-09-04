@@ -21,34 +21,28 @@ struct BrowseView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 100)
             } else if let error = errorMessage {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textTertiary)
 
                     Text(error)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
 
                     Button("Retry") {
                         Task {
                             await loadContent()
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    .tint(VibesColors.accent)
+                    .foregroundColor(.black)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 100)
             } else if sections.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "music.note")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-
-                    Text("No content available")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 100)
+                VibesEmptyState(icon: "music.note", title: "No content available")
+                    .padding(.top, 60)
             } else {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(sections.indices, id: \.self) { index in
@@ -58,8 +52,9 @@ struct BrowseView: View {
                 .padding(.top)
             }
 
-            Spacer(minLength: 120)
+            Spacer(minLength: 140)
         }
+        .vibesBackground()
         .navigationTitle(title)
         .task {
             await loadContent()
@@ -101,11 +96,12 @@ struct BrowseSectionView: View {
                 Text(title)
                     .font(.title2)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
                     .padding(.horizontal)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     ForEach(section.items.indices, id: \.self) { index in
                         HomeItemView(item: section.items[index])
                     }

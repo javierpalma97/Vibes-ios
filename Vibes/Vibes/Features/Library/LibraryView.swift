@@ -10,65 +10,60 @@ struct LibraryView: View {
     @State private var isSyncing: Bool = false
     @State private var syncError: String?
     @State private var showSyncError: Bool = false
-    @State private var selectedFilter: LibraryFilter = .library
+    @State private var selectedTab: VibesLibraryTab = .playlists
+    @State private var sortOption: PlaylistSort = .recentlyAdded
+    @State private var showSettings: Bool = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Filter chips
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(LibraryFilter.allCases) { filter in
-                            Button(action: {
-                                withAnimation {
-                                    selectedFilter = filter
-                                }
-                            }) {
-                                Text(filter.rawValue)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(selectedFilter == filter ? Color.accentColor : Color.gray.opacity(0.2))
-                                    .foregroundColor(selectedFilter == filter ? .white : .primary)
-                                    .cornerRadius(20)
-                            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Header
+                    HStack {
+                        Text("Playlists")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        Spacer()
+                        Button(action: { /* AirPlay / cast */ }) {
+                            Image(systemName: "airplayvideo")
+                                .font(.title2)
+                                .foregroundColor(VibesColors.textPrimary)
+                        }
+                        Button(action: { showSettings = true }) {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .foregroundColor(VibesColors.textPrimary)
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
-                }
-                .background(Color(UIColor.systemBackground))
+                    .padding(.top, 8)
 
-                Divider()
+                    // Tabs
+                    VibesLibraryTabs(selection: $selectedTab)
+                        .padding(.horizontal)
 
-                // Content based on selected filter
-                if selectedFilter == .library {
-                    libraryMixView
-                } else if selectedFilter == .playlists {
-                    playlistsView
-                } else if selectedFilter == .songs {
-                    LibrarySongsView()
-                } else if selectedFilter == .albums {
-                    LibraryAlbumsView()
-                } else if selectedFilter == .artists {
-                    LibraryArtistsView()
+                    // Content per tab
+                    switch selectedTab {
+                    case .playlists:
+                        playlistsContent
+                    case .albums:
+                        LibraryAlbumsView()
+                    case .artists:
+                        LibraryArtistsView()
+                    case .downloads:
+                        DownloadsView()
+                    }
+
+                    Spacer(minLength: 140)
                 }
             }
-            .navigationTitle("Library")
+            .vibesBackground()
             .refreshable {
                 if authManager.isAuthenticated {
                     syncLibrary()
-                    // Wait for sync to complete
                     while isSyncing {
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-                    }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: AccountView()) {
-                        Image(systemName: "person.circle")
+                        try? await Task.sleep(nanoseconds: 100_000_000)
                     }
                 }
             }
@@ -77,6 +72,9 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showCreatePlaylist) {
                 CreatePlaylistView()
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
             }
             .alert("Sync Error", isPresented: $showSyncError) {
                 if syncError?.contains("expired") == true {
@@ -90,7 +88,6 @@ struct LibraryView: View {
             } message: {
                 Text(syncError ?? "An error occurred")
             }
-            // Auto-sync al iniciar sesión (antes solo sincronizaba manual)
             .onChange(of: authManager.isAuthenticated) { _, newValue in
                 if newValue && !isSyncing {
                     syncLibrary()
@@ -99,265 +96,146 @@ struct LibraryView: View {
         }
     }
 
-    // MARK: - Library Mix View (default)
+    // MARK: - Playlists tab
 
-    private var libraryMixView: some View {
-        List {
-                // Account section
-                Section {
-                    if authManager.isAuthenticated {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(authManager.accountName ?? "Signed In")
-                                    .font(.headline)
-
-                                if let email = authManager.accountEmail {
-                                    Text(email)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            Spacer()
-
-                            Button("Sign Out") {
-                                authManager.signOut()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+    private var playlistsContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Sort row
+            HStack {
+                Menu {
+                    ForEach(PlaylistSort.allCases, id: \.self) { option in
+                        Button(action: { sortOption = option }) {
+                            Label(option.rawValue, systemImage: sortOption == option ? "checkmark" : "")
                         }
-
-                        Button(action: {
-                            syncLibrary()
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                Text("Sync Library")
-                                if isSyncing {
-                                    Spacer()
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .disabled(isSyncing)
-                    } else {
-                        Button(action: {
-                            showLogin = true
-                        }) {
-                            HStack {
-                                Image(systemName: "person.circle")
-                                Text("Sign in to YouTube Music")
-                            }
-                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(sortOption.rawValue)
+                            .font(.subheadline)
+                            .foregroundColor(VibesColors.textPrimary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(VibesColors.textSecondary)
                     }
                 }
+                Spacer()
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundColor(VibesColors.textSecondary)
+            }
+            .padding(.horizontal)
 
-                // Downloads
-                Section(header: Text("Downloads")) {
-                    NavigationLink(destination: DownloadsView()) {
-                        HStack {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .foregroundColor(.green)
-                                .frame(width: 40, height: 40)
-                                .background(Color.green.opacity(0.1))
-                                .cornerRadius(8)
-
-                            VStack(alignment: .leading) {
-                                Text("Downloaded Songs")
-                                    .font(.headline)
-                                Text("Listen offline")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                // Auto Playlists
-                Section(header: Text("Auto Playlists")) {
-                    // Liked Songs
-                    NavigationLink(destination: LikedSongsPlaylistView()) {
-                        HStack {
-                            Image(systemName: "heart.fill")
-                                .foregroundColor(.red)
-                                .frame(width: 40, height: 40)
-                                .background(Color.red.opacity(0.1))
-                                .cornerRadius(8)
-
-                            VStack(alignment: .leading) {
-                                Text("Liked Songs")
-                                    .font(.headline)
-                                Text("\(libraryManager.likedSongs.count) songs")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Top Songs
-                    NavigationLink(destination: TopSongsPlaylistView()) {
-                        HStack {
-                            Image(systemName: "chart.bar.fill")
-                                .foregroundColor(.blue)
-                                .frame(width: 40, height: 40)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(8)
-
-                            VStack(alignment: .leading) {
-                                Text("Top Songs")
-                                    .font(.headline)
-                                Text("Most played tracks")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                // Playlists
-                Section(header: HStack {
-                    Text("Playlists")
-                    Spacer()
-                    Button(action: {
-                        showCreatePlaylist = true
-                    }) {
-                        Image(systemName: "plus")
-                    }
-                }) {
-                    ForEach(libraryManager.playlists) { playlist in
-                        NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-                            HStack(spacing: 12) {
-                                AsyncImage(url: URL(string: playlist.thumbnailUrl ?? "")) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .overlay(
-                                            Image(systemName: "music.note.list")
-                                                .foregroundColor(.white)
-                                        )
-                                }
+            if !authManager.isAuthenticated {
+                VibesEmptyState(
+                    icon: "person.circle",
+                    title: "Sign in to see playlists",
+                    subtitle: "Sync your YouTube Music library",
+                    actionTitle: "Sign In",
+                    action: { showLogin = true }
+                )
+                .padding(.horizontal)
+            } else {
+                // Create button
+                Button(action: { showCreatePlaylist = true }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(VibesColors.elevated)
                                 .frame(width: 56, height: 56)
-                                .cornerRadius(8)
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(playlist.name)
-                                        .font(.body)
-                                        .fontWeight(.medium)
-
-                                    HStack {
-                                        Text(playlist.playlistType == .local ? "Local" : "YouTube Music")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-
-                                        Text("•")
-                                            .foregroundColor(.secondary)
-
-                                        Text("\(playlist.songCount) songs")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-                            }
+                            Image(systemName: "plus")
+                                .font(.title2)
+                                .foregroundColor(VibesColors.textPrimary)
                         }
+                        Text("Create New Playlist")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(VibesColors.textPrimary)
+                        Spacer()
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VibesColors.card)
+                    .cornerRadius(VibesRadius.row)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+
+                // Auto playlists
+                NavigationLink(destination: LikedSongsPlaylistView()) {
+                    VibesMediaRow(
+                        artworkUrl: nil,
+                        title: "Liked Songs",
+                        subtitle: "\(libraryManager.likedSongs.count) songs",
+                        fallbackIcon: "heart.fill"
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VibesColors.card)
+                    .cornerRadius(VibesRadius.row)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+
+                NavigationLink(destination: TopSongsPlaylistView()) {
+                    VibesMediaRow(
+                        artworkUrl: nil,
+                        title: "Top Songs",
+                        subtitle: "Most played tracks",
+                        fallbackIcon: "chart.bar.fill"
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VibesColors.card)
+                    .cornerRadius(VibesRadius.row)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+
+                // User playlists
+                ForEach(sortedPlaylists) { playlist in
+                    NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
+                        VibesMediaRow(
+                            artworkUrl: playlist.thumbnailUrl,
+                            title: playlist.name,
+                            subtitle: "\(playlist.songCount) songs",
+                            onMenu: {}
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
                 }
 
-                // Recently played
-                if !libraryManager.recentlyPlayed.isEmpty {
-                    Section(header: Text("Recently Played")) {
-                        ForEach(libraryManager.recentlyPlayed.prefix(10)) { song in
-                            Button(action: {
-                                Task {
-                                    await queueManager.setQueue([song])
-                                }
-                            }) {
-                                SongRow(song: song)
-                            }
+                // Sync button
+                Button(action: { syncLibrary() }) {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text(isSyncing ? "Syncing..." : "Sync Library")
+                        if isSyncing {
+                            Spacer()
+                            ProgressView()
                         }
                     }
+                    .font(.subheadline)
+                    .foregroundColor(VibesColors.accent)
                 }
+                .disabled(isSyncing)
+                .padding(.horizontal)
+                .padding(.top, 4)
             }
         }
+    }
 
-    // MARK: - Playlists View
-
-    private var playlistsView: some View {
-        List {
-            // Playlists
-            Section(header: HStack {
-                Text("Playlists")
-                Spacer()
-                Button(action: {
-                    showCreatePlaylist = true
-                }) {
-                    Image(systemName: "plus")
-                }
-            }) {
-                ForEach(libraryManager.playlists) { playlist in
-                    NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-                        HStack(spacing: 12) {
-                            AsyncImage(url: URL(string: playlist.thumbnailUrl ?? "")) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .overlay(
-                                        Image(systemName: "music.note.list")
-                                            .foregroundColor(.white)
-                                    )
-                            }
-                            .frame(width: 56, height: 56)
-                            .cornerRadius(8)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(playlist.name)
-                                    .font(.body)
-                                    .fontWeight(.medium)
-
-                                HStack {
-                                    Text(playlist.playlistType == .local ? "Local" : "YouTube Music")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-
-                                    Text("•")
-                                        .foregroundColor(.secondary)
-
-                                    Text("\(playlist.songCount) songs")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                    }
-                }
-            }
+    private var sortedPlaylists: [Playlist] {
+        switch sortOption {
+        case .recentlyAdded:
+            return libraryManager.playlists
+        case .name:
+            return libraryManager.playlists.sorted { $0.name < $1.name }
+        case .mostTracks:
+            return libraryManager.playlists.sorted { $0.songCount > $1.songCount }
         }
     }
 
@@ -370,7 +248,6 @@ struct LibraryView: View {
                 try await libraryManager.syncLibrary()
             } catch InnerTubeError.authenticationExpired {
                 await MainActor.run {
-                    // No hacer signOut automático – deja que el usuario decida, solo muestra error con detalle
                     DebugLogger.shared.log("❌ sync authExpired \(InnerTubeClient.shared.debugAuthState)")
                     syncError = "Sync authExpired – no se cierra sesión. Revisa DebugLog. \(InnerTubeClient.shared.debugAuthState)"
                     showSyncError = true
@@ -398,43 +275,26 @@ struct LibraryView: View {
     }
 }
 
+// MARK: - Sort options
+
+enum PlaylistSort: String, CaseIterable {
+    case recentlyAdded = "Recently added"
+    case name = "Name"
+    case mostTracks = "Most tracks"
+}
+
+// MARK: - Song row (shared, pure row: callers wrap tap behavior)
+
 struct SongRow: View {
     let song: Song
-    @StateObject private var downloadManager = DownloadManager.shared
 
     var body: some View {
-        HStack(spacing: 12) {
-            AsyncImage(url: URL(string: song.thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .frame(width: 48, height: 48)
-            .cornerRadius(6)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                Text(song.artistsText ?? "Unknown Artist")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            // Download status indicator
-            DownloadStatusIndicator(songId: song.id)
-        }
+        VibesTrackRow(song: song)
+            .songContextMenu(song: song)
     }
 }
+
+// MARK: - Create playlist
 
 struct CreatePlaylistView: View {
     @Environment(\.dismiss) var dismiss
@@ -444,9 +304,13 @@ struct CreatePlaylistView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("Playlist Name", text: $playlistName)
+            VStack(spacing: 20) {
+                VibesSearchBar(text: $playlistName, placeholder: "Playlist name")
+                    .padding(.horizontal)
+                    .padding(.top, 20)
+                Spacer()
             }
+            .vibesBackground()
             .navigationTitle("New Playlist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -454,6 +318,7 @@ struct CreatePlaylistView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(VibesColors.textPrimary)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -464,11 +329,15 @@ struct CreatePlaylistView: View {
                         }
                     }
                     .disabled(playlistName.isEmpty)
+                    .foregroundColor(VibesColors.accent)
+                    .fontWeight(.semibold)
                 }
             }
         }
     }
 }
+
+// MARK: - Local playlist detail
 
 struct PlaylistDetailView: View {
     @EnvironmentObject var libraryManager: LibraryManager
@@ -479,10 +348,9 @@ struct PlaylistDetailView: View {
     @State private var songs: [Song] = []
 
     var body: some View {
-        List {
-            // Playlist header with actions
-            Section {
-                HStack(spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
                     Button(action: {
                         Task {
                             await queueManager.setQueue(songs)
@@ -494,9 +362,10 @@ struct PlaylistDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                        .background(VibesColors.accent)
+                        .foregroundColor(.black)
+                        .fontWeight(.semibold)
+                        .cornerRadius(12)
                     }
                     .disabled(songs.isEmpty)
 
@@ -511,17 +380,15 @@ struct PlaylistDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .foregroundColor(.primary)
-                        .cornerRadius(10)
+                        .background(VibesColors.elevated)
+                        .foregroundColor(VibesColors.textPrimary)
+                        .cornerRadius(12)
                     }
                     .disabled(songs.isEmpty)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
+                .buttonStyle(.plain)
+                .padding(.horizontal)
 
-                // Download All button
                 Button(action: {
                     Task {
                         await DownloadManager.shared.downloadMultiple(songs: songs)
@@ -533,25 +400,39 @@ struct PlaylistDetailView: View {
                         Text("Download All")
                         Spacer()
                     }
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(VibesColors.accent)
                 }
                 .disabled(songs.isEmpty)
-            }
+                .padding(.horizontal)
 
-            // Songs list
-            Section(header: Text("\(songs.count) songs")) {
-                ForEach(songs) { song in
-                    Button(action: {
-                        Task {
-                            await queueManager.setQueue(songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+                Text("\(songs.count) songs")
+                    .font(.subheadline)
+                    .foregroundColor(VibesColors.textSecondary)
+                    .padding(.horizontal)
+
+                LazyVStack(spacing: 4) {
+                    ForEach(songs) { song in
+                        Button(action: {
+                            Task {
+                                await queueManager.setQueue(songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+                            }
+                        }) {
+                            SongRow(song: song)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(VibesColors.card)
+                                .cornerRadius(VibesRadius.row)
                         }
-                    }) {
-                        SongRow(song: song)
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
                     }
-                    .songContextMenu(song: song)
                 }
+
+                Spacer(minLength: 140)
             }
+            .padding(.top)
         }
+        .vibesBackground()
         .navigationTitle(playlist.name)
         .task {
             songs = await libraryManager.getPlaylistSongs(playlist)

@@ -13,11 +13,11 @@ struct YTPlaylistDetailView: View {
     private let ytMusic = YouTubeMusic.shared
 
     var body: some View {
-        List {
-            // Header section with play/shuffle buttons
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header actions
                 if !songs.isEmpty {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         Button(action: {
                             Task {
                                 await playAll()
@@ -29,9 +29,10 @@ struct YTPlaylistDetailView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.accentColor)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                            .background(VibesColors.accent)
+                            .foregroundColor(.black)
+                            .fontWeight(.semibold)
+                            .cornerRadius(12)
                         }
 
                         Button(action: {
@@ -45,16 +46,14 @@ struct YTPlaylistDetailView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color(UIColor.secondarySystemBackground))
-                            .foregroundColor(.primary)
-                            .cornerRadius(10)
+                            .background(VibesColors.elevated)
+                            .foregroundColor(VibesColors.textPrimary)
+                            .cornerRadius(12)
                         }
                     }
-                    .buttonStyle(PlainButtonStyle())
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
 
-                    // Download All button
                     Button(action: {
                         Task {
                             await downloadAll()
@@ -66,8 +65,9 @@ struct YTPlaylistDetailView: View {
                             Text("Download All")
                             Spacer()
                         }
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(VibesColors.accent)
                     }
+                    .padding(.horizontal)
                 }
 
                 if isLoading {
@@ -76,27 +76,45 @@ struct YTPlaylistDetailView: View {
                         ProgressView()
                         Spacer()
                     }
+                    .padding(.top, 40)
                 }
 
                 if let error = errorMessage {
                     Text(error)
                         .foregroundColor(.red)
                         .font(.caption)
+                        .padding(.horizontal)
                 }
-            }
 
-            // Songs list
-            ForEach(songs.indices, id: \.self) { index in
-                YTPlaylistSongRow(
-                    ytSong: songs[index],
-                    onTap: {
-                        Task {
-                            await playSong(at: index)
-                        }
+                Text("\(songs.count) songs")
+                    .font(.subheadline)
+                    .foregroundColor(VibesColors.textSecondary)
+                    .padding(.horizontal)
+
+                // Songs list
+                LazyVStack(spacing: 4) {
+                    ForEach(songs.indices, id: \.self) { index in
+                        YTPlaylistSongRow(
+                            ytSong: songs[index],
+                            onTap: {
+                                Task {
+                                    await playSong(at: index)
+                                }
+                            }
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
+                        .padding(.horizontal)
                     }
-                )
+                }
+
+                Spacer(minLength: 140)
             }
+            .padding(.top)
         }
+        .vibesBackground()
         .navigationTitle(ytPlaylist.name)
         .navigationBarTitleDisplayMode(.large)
         .task {
@@ -109,7 +127,7 @@ struct YTPlaylistDetailView: View {
         errorMessage = nil
 
         do {
-            print("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
+            dlog("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
             await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist start id=\(ytPlaylist.id) nombre=\(ytPlaylist.name)") }
 
             // Solo es radio si el id NO es navegable (RD...). Las cards (charts etc.)
@@ -244,36 +262,27 @@ struct YTPlaylistDetailView: View {
 struct YTPlaylistSongRow: View {
     let ytSong: YTSong
     let onTap: () -> Void
-    
+
     @EnvironmentObject var libraryManager: LibraryManager
     @EnvironmentObject var queueManager: QueueManager
     @State private var song: Song?
     @State private var showAddToPlaylist = false
     @State private var showShareSheet = false
-    
+
     var body: some View {
         Button(action: onTap) {
             HStack {
-                AsyncImage(url: URL(string: ytSong.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 50, height: 50)
-                .cornerRadius(8)
+                VibesArtwork(url: ytSong.thumbnailUrl, size: 50, radius: 8)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(ytSong.title)
                         .font(.body)
-                        .foregroundColor(.primary)
+                        .foregroundColor(VibesColors.textPrimary)
                         .lineLimit(1)
 
                     Text(ytSong.artists)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                         .lineLimit(1)
                 }
 
@@ -284,19 +293,19 @@ struct YTPlaylistSongRow: View {
                 }
             }
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
         .contextMenu {
             if let song = song {
                 Button(action: { queueManager.insertNext(song) }) {
                     Label("Play Next", systemImage: "text.insert")
                 }
-                
+
                 Button(action: { queueManager.addToQueue(song) }) {
                     Label("Add to Queue", systemImage: "text.append")
                 }
-                
+
                 Divider()
-                
+
                 Button(action: { downloadSong() }) {
                     if DownloadManager.shared.isDownloaded(song.id) {
                         Label("Remove Download", systemImage: "trash")
@@ -304,11 +313,11 @@ struct YTPlaylistSongRow: View {
                         Label("Download", systemImage: "arrow.down.circle")
                     }
                 }
-                
+
                 Button(action: { showAddToPlaylist = true }) {
                     Label("Add to Playlist", systemImage: "plus.rectangle.on.folder")
                 }
-                
+
                 Button(action: { toggleLike() }) {
                     if song.liked {
                         Label("Remove from Liked", systemImage: "heart.slash")
@@ -316,9 +325,9 @@ struct YTPlaylistSongRow: View {
                         Label("Add to Liked", systemImage: "heart")
                     }
                 }
-                
+
                 Divider()
-                
+
                 Button(action: { showShareSheet = true }) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
@@ -342,7 +351,7 @@ struct YTPlaylistSongRow: View {
             song = await libraryManager.getSong(id: ytSong.id)
         }
     }
-    
+
     private func downloadSong() {
         guard let song = song else { return }
         Task {
@@ -353,7 +362,7 @@ struct YTPlaylistSongRow: View {
             }
         }
     }
-    
+
     private func toggleLike() {
         guard let song = song else { return }
         Task {

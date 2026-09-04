@@ -16,6 +16,9 @@ class AuthenticationManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
+        // Login por cookies (WebView/SAPISID) retirado: solo OAuth2. Se limpian
+        // restos de sesiones cookie persistidas para no autenticar con ellas.
+        innerTube.clearAuthData()
         loadAuthState()
         // OAuth login debe reflejarse en UI aunque no haya cookies (tu log: oauth ok pero sale como guest)
         NotificationCenter.default.publisher(for: NSNotification.Name("OAuthAuthChanged"))

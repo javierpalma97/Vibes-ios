@@ -13,6 +13,8 @@ struct LikedSongsPlaylistView: View {
             playlistHeaderSection
             songsListSection
         }
+        .scrollContentBackground(.hidden)
+        .vibesBackground()
         .navigationTitle("Liked Songs")
     }
 
@@ -228,6 +230,8 @@ struct TopSongsPlaylistView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .vibesBackground()
         .navigationTitle("Top Songs")
         .task {
             await loadTopSongs()
@@ -363,6 +367,8 @@ struct DownloadedPlaylistView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .vibesBackground()
         .navigationTitle("Downloaded Songs")
         .task {
             await loadDownloadedSongs()

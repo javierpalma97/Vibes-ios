@@ -65,18 +65,65 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         libraryTab.tabImage = UIImage(systemName: "music.note.list")
 
         let browseTab = await createBrowseTemplate()
-        browseTab.tabImage = UIImage(systemName: "square.grid.2x2")
+        browseTab.tabImage = UIImage(systemName: "safari")
 
         let playlistsTab = await createPlaylistsTemplate()
-        playlistsTab.tabImage = UIImage(systemName: "list.bullet")
+        playlistsTab.tabImage = UIImage(systemName: "square.stack.fill")
+
+        let downloadsTab = await createDownloadsTemplate()
+        downloadsTab.tabImage = UIImage(systemName: "arrow.down.circle")
 
         let nowPlayingTab = CPNowPlayingTemplate.shared
-        nowPlayingTab.tabImage = UIImage(systemName: "play.circle.fill")
+        nowPlayingTab.tabImage = UIImage(systemName: "play.fill")
 
         // Configure now playing template buttons
         configureNowPlayingTemplate()
 
-        return CPTabBarTemplate(templates: [libraryTab, browseTab, playlistsTab, nowPlayingTab])
+        return CPTabBarTemplate(templates: [libraryTab, browseTab, playlistsTab, downloadsTab, nowPlayingTab])
+    }
+
+    @MainActor
+    private func createDownloadsTemplate() async -> CPListTemplate {
+        let ids = DownloadManager.shared.getDownloadedSongIds()
+        var songs: [Song] = []
+        for id in ids {
+            if let song = await libraryManager.getSong(id: id) {
+                songs.append(song)
+            }
+        }
+
+        if songs.isEmpty {
+            let emptyItem = CPListItem(
+                text: "No downloads",
+                detailText: "Download music in the app"
+            )
+            return CPListTemplate(title: "Downloads", sections: [CPListSection(items: [emptyItem])])
+        }
+
+        let items = songs.enumerated().map { index, song -> CPListItem in
+            let item = CPListItem(
+                text: song.title,
+                detailText: song.artistsText ?? "Unknown Artist"
+            )
+            item.handler = { [weak self] _, completion in
+                Task { @MainActor in
+                    await self?.queueManager.setQueue(songs, startIndex: index, enableRadio: false)
+                }
+                completion()
+            }
+            if let thumbnailUrl = song.thumbnailUrl {
+                Task {
+                    if let image = await self.loadImage(from: thumbnailUrl) {
+                        await MainActor.run {
+                            item.setImage(image)
+                        }
+                    }
+                }
+            }
+            return item
+        }
+
+        return CPListTemplate(title: "Downloads", sections: [CPListSection(items: items)])
     }
 
     @MainActor
@@ -143,11 +190,74 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                 var items: [CPListItem] = []
 
                 for homeItem in section.items.prefix(10) {
-                    if case .song(let song) = homeItem {
+                    switch homeItem {
+                    case .song(let song):
                         let item = CPListItem(text: song.title, detailText: song.artists)
                         item.handler = { [weak self] _, completion in
                             Task { @MainActor in
                                 await self?.playSongFromYT(song)
+                            }
+                            completion()
+                        }
+                        if let thumbnailUrl = song.thumbnailUrl {
+                            Task {
+                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                    await MainActor.run {
+                                        item.setImage(image)
+                                    }
+                                }
+                            }
+                        }
+                        items.append(item)
+                    case .playlist(let playlist):
+                        let item = CPListItem(
+                            text: playlist.name,
+                            detailText: playlist.author ?? "Playlist",
+                            image: UIImage(systemName: "music.note.list")
+                        )
+                        item.handler = { [weak self] _, completion in
+                            Task { @MainActor in
+                                await self?.showYTPlaylist(playlist)
+                            }
+                            completion()
+                        }
+                        if let thumbnailUrl = playlist.thumbnailUrl {
+                            Task {
+                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                    await MainActor.run {
+                                        item.setImage(image)
+                                    }
+                                }
+                            }
+                        }
+                        items.append(item)
+                    case .album(let album):
+                        let item = CPListItem(text: album.title, detailText: album.artists)
+                        item.handler = { [weak self] _, completion in
+                            Task { @MainActor in
+                                await self?.playAlbum(album)
+                            }
+                            completion()
+                        }
+                        if let thumbnailUrl = album.thumbnailUrl {
+                            Task {
+                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                    await MainActor.run {
+                                        item.setImage(image)
+                                    }
+                                }
+                            }
+                        }
+                        items.append(item)
+                    case .artist(let artist):
+                        let item = CPListItem(
+                            text: artist.name,
+                            detailText: "Artist",
+                            image: UIImage(systemName: "person.circle")
+                        )
+                        item.handler = { [weak self] _, completion in
+                            Task { @MainActor in
+                                await self?.playArtistTopSongs(artist: artist)
                             }
                             completion()
                         }
@@ -190,6 +300,15 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                     }
                     completion()
                 }
+                if let thumbnailUrl = album.thumbnailUrl {
+                    Task {
+                        if let image = await self.loadImage(from: thumbnailUrl) {
+                            await MainActor.run {
+                                item.setImage(image)
+                            }
+                        }
+                    }
+                }
                 return item
             }
 
@@ -215,6 +334,67 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         await libraryManager.saveSong(ytSong)
         if let song = await libraryManager.getSong(id: ytSong.id) {
             await queueManager.setQueue([song])
+        }
+    }
+
+    @MainActor
+    private func showYTPlaylist(_ playlist: YTPlaylist) async {
+        do {
+            let (_, ytSongs) = try await YouTubeMusic.shared.getPlaylist(browseId: playlist.id)
+            var songs: [Song] = []
+            for ytSong in ytSongs {
+                await libraryManager.saveSong(ytSong)
+                if let song = await libraryManager.getSong(id: ytSong.id) {
+                    songs.append(song)
+                }
+            }
+            if songs.isEmpty {
+                let emptyItem = CPListItem(text: "Empty playlist", detailText: "Nothing to play")
+                let emptyTemplate = CPListTemplate(title: playlist.name, sections: [CPListSection(items: [emptyItem])])
+                interfaceController?.pushTemplate(emptyTemplate, animated: true, completion: nil)
+                return
+            }
+            let items = songs.enumerated().map { index, song -> CPListItem in
+                let item = CPListItem(text: song.title, detailText: song.artistsText ?? "Unknown Artist")
+                item.handler = { [weak self] _, completion in
+                    Task { @MainActor in
+                        await self?.queueManager.setQueue(songs, startIndex: index, enableRadio: false)
+                    }
+                    completion()
+                }
+                return item
+            }
+            let template = CPListTemplate(title: playlist.name, sections: [CPListSection(items: items)])
+            interfaceController?.pushTemplate(template, animated: true, completion: nil)
+        } catch {
+            dlog("❌ [CarPlay] Failed to open playlist: \(error)")
+        }
+    }
+
+    @MainActor
+    private func playArtistTopSongs(artist: YTArtist) async {
+        do {
+            let page = try await YouTubeMusic.shared.getArtist(browseId: artist.id)
+            var ytSongs: [YTSong] = []
+            for section in page.sections {
+                for item in section.items {
+                    if case .song(let song) = item {
+                        ytSongs.append(song)
+                    }
+                }
+            }
+            var songs: [Song] = []
+            for ytSong in ytSongs.prefix(25) {
+                await libraryManager.saveSong(ytSong)
+                if let song = await libraryManager.getSong(id: ytSong.id) {
+                    songs.append(song)
+                }
+            }
+            if !songs.isEmpty {
+                await queueManager.setQueue(songs.shuffled())
+            }
+        } catch {
+            dlog("❌ [CarPlay] Failed to play artist: \(error)")
         }
     }
 

@@ -14,33 +14,39 @@ struct HistoryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                // Local Recently Played
                 if !libraryManager.recentlyPlayed.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("Recently Played")
                             .font(.title2)
                             .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
                             .padding(.horizontal)
 
-                        ForEach(libraryManager.recentlyPlayed.prefix(20)) { song in
-                            Button(action: {
-                                Task {
-                                    await queueManager.setQueue([song])
+                        LazyVStack(spacing: 4) {
+                            ForEach(libraryManager.recentlyPlayed.prefix(20)) { song in
+                                Button(action: {
+                                    Task {
+                                        await queueManager.setQueue([song])
+                                    }
+                                }) {
+                                    HistorySongRow(
+                                        title: song.title,
+                                        artist: song.artistsText ?? "",
+                                        thumbnailUrl: song.thumbnailUrl,
+                                        isPlaying: playerManager.currentSong?.id == song.id
+                                    )
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(VibesColors.card)
+                                    .cornerRadius(VibesRadius.row)
                                 }
-                            }) {
-                                HistorySongRow(
-                                    title: song.title,
-                                    artist: song.artistsText ?? "",
-                                    thumbnailUrl: song.thumbnailUrl,
-                                    isPlaying: playerManager.currentSong?.id == song.id
-                                )
+                                .buttonStyle(.plain)
+                                .padding(.horizontal)
                             }
-                            .buttonStyle(PlainButtonStyle())
                         }
                     }
                 }
 
-                // YouTube Music History (if authenticated)
                 if isLoading {
                     HStack {
                         Spacer()
@@ -49,13 +55,13 @@ struct HistoryView: View {
                     }
                     .padding(.top, 40)
                 } else if let error = errorMessage {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 14) {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.largeTitle)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(VibesColors.textTertiary)
 
                         Text(error)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(VibesColors.textSecondary)
                             .multilineTextAlignment(.center)
 
                         Button("Retry") {
@@ -63,7 +69,9 @@ struct HistoryView: View {
                                 await loadHistory()
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(VibesColors.accent)
+                        .foregroundColor(.black)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 40)
@@ -73,11 +81,13 @@ struct HistoryView: View {
                     }
                 }
 
-                Spacer(minLength: 120)
+                Spacer(minLength: 140)
             }
             .padding(.top)
         }
+        .vibesBackground()
         .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadHistory()
         }
@@ -118,30 +128,38 @@ struct HistorySectionView: View {
     @EnvironmentObject var playerManager: PlayerManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(section.title)
                 .font(.title3)
                 .fontWeight(.semibold)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal)
 
-            ForEach(section.songs.indices, id: \.self) { index in
-                let song = section.songs[index]
-                Button(action: {
-                    Task {
-                        await libraryManager.saveSong(song)
-                        if let librarySong = await libraryManager.getSong(id: song.id) {
-                            await queueManager.setQueue([librarySong])
+            LazyVStack(spacing: 4) {
+                ForEach(section.songs.indices, id: \.self) { index in
+                    let song = section.songs[index]
+                    Button(action: {
+                        Task {
+                            await libraryManager.saveSong(song)
+                            if let librarySong = await libraryManager.getSong(id: song.id) {
+                                await queueManager.setQueue([librarySong])
+                            }
                         }
+                    }) {
+                        HistorySongRow(
+                            title: song.title,
+                            artist: song.artists,
+                            thumbnailUrl: song.thumbnailUrl,
+                            isPlaying: playerManager.currentSong?.id == song.id
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
                     }
-                }) {
-                    HistorySongRow(
-                        title: song.title,
-                        artist: song.artists,
-                        thumbnailUrl: song.thumbnailUrl,
-                        isPlaying: playerManager.currentSong?.id == song.id
-                    )
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
                 }
-                .buttonStyle(PlainButtonStyle())
             }
         }
     }
@@ -157,27 +175,18 @@ struct HistorySongRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: URL(string: thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .frame(width: 56, height: 56)
-            .cornerRadius(8)
+            VibesArtwork(url: thumbnailUrl, size: 56, radius: 8)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.body)
                     .fontWeight(.medium)
-                    .foregroundColor(isPlaying ? .accentColor : .primary)
+                    .foregroundColor(isPlaying ? VibesColors.accent : VibesColors.textPrimary)
                     .lineLimit(1)
 
                 Text(artist)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textSecondary)
                     .lineLimit(1)
             }
 
@@ -185,16 +194,9 @@ struct HistorySongRow: View {
 
             if isPlaying {
                 Image(systemName: "waveform")
-                    .foregroundColor(.accentColor)
-            }
-
-            Button(action: {}) {
-                Image(systemName: "ellipsis")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.accent)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 4)
     }
 }
 

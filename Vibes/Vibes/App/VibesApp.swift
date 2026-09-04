@@ -12,6 +12,13 @@ struct VibesApp: App {
     @StateObject private var lyricsManager = LyricsManager.shared
     @StateObject private var themeManager = ThemeManager.shared
 
+    init() {
+        // Global dark theme (mockup): transparent list backgrounds so every
+        // legacy List screen inherits the dark background automatically.
+        UITableView.appearance().backgroundColor = UIColor.clear
+        UITableViewCell.appearance().backgroundColor = UIColor.clear
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

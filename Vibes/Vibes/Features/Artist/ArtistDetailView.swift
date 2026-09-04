@@ -16,7 +16,6 @@ struct ArtistDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Artist Header
                 ArtistHeader(
                     artist: artistPage?.artist ?? artist,
                     description: artistPage?.description,
@@ -24,32 +23,33 @@ struct ArtistDetailView: View {
                     onRadio: startRadio
                 )
 
-                // Loading state
                 if isLoading {
                     ProgressView()
                         .padding(.top, 40)
                 } else if let error = errorMessage {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 14) {
                         Text(error)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(VibesColors.textSecondary)
                         Button("Retry") {
                             Task {
                                 await loadArtist()
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(VibesColors.accent)
+                        .foregroundColor(.black)
                     }
                     .padding(.top, 40)
                 } else if let sections = artistPage?.sections {
-                    // Artist sections
                     ForEach(sections.indices, id: \.self) { index in
                         ArtistSectionView(section: sections[index])
                     }
                 }
 
-                Spacer(minLength: 120)
+                Spacer(minLength: 140)
             }
         }
+        .vibesBackground()
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -80,7 +80,6 @@ struct ArtistDetailView: View {
 
     private func shufflePlay() {
         Task {
-            // Collect all songs from all sections
             var allSongs: [YTSong] = []
 
             if let sections = artistPage?.sections {
@@ -93,7 +92,6 @@ struct ArtistDetailView: View {
                 }
             }
 
-            // Convert to library songs
             var librarySongs: [Song] = []
             for ytSong in allSongs {
                 await libraryManager.saveSong(ytSong)
@@ -102,7 +100,6 @@ struct ArtistDetailView: View {
                 }
             }
 
-            // Shuffle and play
             if !librarySongs.isEmpty {
                 await queueManager.setQueue(librarySongs.shuffled())
             }
@@ -111,7 +108,6 @@ struct ArtistDetailView: View {
 
     private func startRadio() {
         Task {
-            // Collect all songs from all sections
             var allSongs: [YTSong] = []
 
             if let sections = artistPage?.sections {
@@ -124,7 +120,6 @@ struct ArtistDetailView: View {
                 }
             }
 
-            // Convert to library songs
             var librarySongs: [Song] = []
             for ytSong in allSongs {
                 await libraryManager.saveSong(ytSong)
@@ -133,7 +128,6 @@ struct ArtistDetailView: View {
                 }
             }
 
-            // Start radio mode - will fetch similar songs automatically
             if !librarySongs.isEmpty {
                 await queueManager.setQueue(librarySongs, startIndex: 0, enableRadio: true)
             }
@@ -150,37 +144,34 @@ struct ArtistHeader: View {
     let onRadio: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Artist image
+        VStack(spacing: 14) {
             AsyncImage(url: URL(string: artist.thumbnailUrl ?? "")) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } placeholder: {
                 Circle()
-                    .fill(Color.gray.opacity(0.3))
+                    .fill(VibesColors.elevated)
             }
-            .frame(width: 200, height: 200)
+            .frame(width: 180, height: 180)
             .clipShape(Circle())
-            .shadow(radius: 10)
+            .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
 
-            // Artist name
             Text(artist.name)
                 .font(.title)
                 .fontWeight(.bold)
+                .foregroundColor(VibesColors.textPrimary)
 
-            // Description
             if let description = description {
                 Text(description)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .padding(.horizontal)
             }
 
-            // Action buttons
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Button(action: onShuffle) {
                     HStack {
                         Image(systemName: "shuffle")
@@ -189,9 +180,9 @@ struct ArtistHeader: View {
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(25)
+                    .background(VibesColors.accent)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
                 }
 
                 Button(action: onRadio) {
@@ -202,11 +193,12 @@ struct ArtistHeader: View {
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .foregroundColor(.primary)
-                    .cornerRadius(25)
+                    .background(VibesColors.elevated)
+                    .foregroundColor(VibesColors.textPrimary)
+                    .cornerRadius(12)
                 }
             }
+            .buttonStyle(.plain)
             .padding(.horizontal)
         }
         .padding()
@@ -222,25 +214,24 @@ struct ArtistSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Section header
             HStack {
                 Text(section.title)
                     .font(.title2)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
 
                 Spacer()
 
                 if section.browseId != nil {
                     Text("See all")
                         .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(VibesColors.accent)
                 }
             }
             .padding(.horizontal)
 
-            // Section items
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     ForEach(section.items.indices, id: \.self) { index in
                         ArtistItemView(item: section.items[index])
                     }

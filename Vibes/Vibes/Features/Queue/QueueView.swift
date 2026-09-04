@@ -7,82 +7,114 @@ struct QueueView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if !queueManager.queue.isEmpty {
-                    // History - Previously played songs (chronological order, most recent at bottom)
-                    if queueManager.currentIndex > 0 {
-                        Section(header: Text("History (\(queueManager.currentIndex))")) {
-                            ForEach(Array(queueManager.queue[0..<queueManager.currentIndex].enumerated()), id: \.element.id) { index, song in
-                                QueueSongRow(
-                                    song: song,
-                                    isCurrentSong: false,
-                                    onTap: {
-                                        Task {
-                                            await queueManager.playAt(index: index)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if queueManager.queue.isEmpty {
+                        VibesEmptyState(
+                            icon: "music.note.list",
+                            title: "No Songs in Queue",
+                            subtitle: "Play a song to see it here"
+                        )
+                    } else {
+                        if queueManager.currentIndex > 0 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("History (\(queueManager.currentIndex))")
+                                    .font(.headline)
+                                    .foregroundColor(VibesColors.textPrimary)
+                                    .padding(.horizontal)
+                                LazyVStack(spacing: 4) {
+                                    ForEach(Array(queueManager.queue[0..<queueManager.currentIndex].enumerated()), id: \.element.id) { index, song in
+                                        Button(action: {
+                                            Task {
+                                                await queueManager.playAt(index: index)
+                                            }
+                                        }) {
+                                            QueueSongRow(
+                                                song: song,
+                                                isCurrentSong: false,
+                                                onTap: {},
+                                                onRemove: {
+                                                    queueManager.removeFromQueue(at: index)
+                                                }
+                                            )
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(VibesColors.card)
+                                            .cornerRadius(VibesRadius.row)
                                         }
-                                    },
-                                    onRemove: {
-                                        queueManager.removeFromQueue(at: index)
+                                        .buttonStyle(.plain)
+                                        .padding(.horizontal)
                                     }
-                                )
+                                }
                             }
                         }
-                    }
 
-                    // Now Playing - Current song
-                    Section(header: Text("Now Playing")) {
-                        if queueManager.currentIndex >= 0 && queueManager.currentIndex < queueManager.queue.count {
-                            QueueSongRow(
-                                song: queueManager.queue[queueManager.currentIndex],
-                                isCurrentSong: true,
-                                onTap: {}
-                            )
-                        }
-                    }
-
-                    // Up Next - Upcoming songs
-                    if queueManager.currentIndex + 1 < queueManager.queue.count {
-                        Section(header: Text("Up Next (\(queueManager.queue.count - queueManager.currentIndex - 1))")) {
-                            ForEach(Array(queueManager.queue[(queueManager.currentIndex + 1)...].enumerated()), id: \.element.id) { index, song in
-                                let actualIndex = queueManager.currentIndex + 1 + index
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Now Playing")
+                                .font(.headline)
+                                .foregroundColor(VibesColors.textPrimary)
+                                .padding(.horizontal)
+                            if queueManager.currentIndex >= 0 && queueManager.currentIndex < queueManager.queue.count {
                                 QueueSongRow(
-                                    song: song,
-                                    isCurrentSong: false,
-                                    onTap: {
-                                        Task {
-                                            await queueManager.playAt(index: actualIndex)
-                                        }
-                                    },
-                                    onRemove: {
-                                        queueManager.removeFromQueue(at: actualIndex)
-                                    }
+                                    song: queueManager.queue[queueManager.currentIndex],
+                                    isCurrentSong: true,
+                                    onTap: {}
                                 )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(VibesColors.accentDim)
+                                .cornerRadius(VibesRadius.row)
+                                .padding(.horizontal)
                             }
-                            .onMove { source, destination in
-                                // Adjust indices for the section offset
-                                let adjustedSource = source.map { $0 + queueManager.currentIndex + 1 }
-                                let adjustedDestination = destination + queueManager.currentIndex + 1
-                                if let first = adjustedSource.first {
-                                    queueManager.moveItem(from: first, to: adjustedDestination)
+                        }
+
+                        if queueManager.currentIndex + 1 < queueManager.queue.count {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Up Next (\(queueManager.queue.count - queueManager.currentIndex - 1))")
+                                    .font(.headline)
+                                    .foregroundColor(VibesColors.textPrimary)
+                                    .padding(.horizontal)
+                                LazyVStack(spacing: 4) {
+                                    ForEach(Array(queueManager.queue[(queueManager.currentIndex + 1)...].enumerated()), id: \.element.id) { index, song in
+                                        let actualIndex = queueManager.currentIndex + 1 + index
+                                        Button(action: {
+                                            Task {
+                                                await queueManager.playAt(index: actualIndex)
+                                            }
+                                        }) {
+                                            QueueSongRow(
+                                                song: song,
+                                                isCurrentSong: false,
+                                                onTap: {},
+                                                onRemove: {
+                                                    queueManager.removeFromQueue(at: actualIndex)
+                                                }
+                                            )
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(VibesColors.card)
+                                            .cornerRadius(VibesRadius.row)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.horizontal)
+                                    }
                                 }
                             }
                         }
                     }
-                } else {
-                    ContentUnavailableView(
-                        "No Songs in Queue",
-                        systemImage: "music.note.list",
-                        description: Text("Play a song to see it here")
-                    )
+                    Spacer(minLength: 60)
                 }
+                .padding(.top)
             }
-            .navigationTitle("Queue")
+            .vibesBackground()
+            .navigationTitle("Up Next")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(VibesColors.accent)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -103,6 +135,7 @@ struct QueueView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .foregroundColor(VibesColors.textPrimary)
                     }
                 }
             }
@@ -119,36 +152,24 @@ struct QueueSongRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // Thumbnail
-                AsyncImage(url: URL(string: song.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 48, height: 48)
-                .cornerRadius(6)
-                .overlay(
-                    isCurrentSong ?
-                    Rectangle()
-                        .fill(Color.accentColor.opacity(0.3))
-                        .cornerRadius(6)
-                    : nil
-                )
+                VibesArtwork(url: song.thumbnailUrl, size: 48, radius: 8)
+                    .overlay(
+                        isCurrentSong ?
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(VibesColors.accent.opacity(0.3))
+                        : nil
+                    )
 
-                // Song info
                 VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
                         .font(.body)
                         .fontWeight(isCurrentSong ? .semibold : .regular)
-                        .foregroundColor(isCurrentSong ? .accentColor : .primary)
+                        .foregroundColor(isCurrentSong ? VibesColors.accent : VibesColors.textPrimary)
                         .lineLimit(1)
 
                     Text(song.artistsText ?? "Unknown Artist")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                         .lineLimit(1)
                 }
 
@@ -157,13 +178,13 @@ struct QueueSongRow: View {
                 if isCurrentSong {
                     Image(systemName: "waveform")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(VibesColors.accent)
                 } else {
                     DownloadStatusIndicator(songId: song.id)
                 }
             }
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
         .songContextMenu(song: song)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if let onRemove = onRemove {

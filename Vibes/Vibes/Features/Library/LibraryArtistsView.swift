@@ -7,25 +7,16 @@ struct LibraryArtistsView: View {
     var body: some View {
         ScrollView {
             if artists.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "person.2")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-
-                    Text("No artists in library")
-                        .font(.headline)
-
-                    Text("Play artists to add them to your library")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 60)
+                VibesEmptyState(
+                    icon: "person.2",
+                    title: "No artists in library",
+                    subtitle: "Play artists to add them to your library"
+                )
+                .padding(.top, 40)
             } else {
                 LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
+                    GridItem(.flexible(), spacing: 14),
+                    GridItem(.flexible(), spacing: 14)
                 ], spacing: 16) {
                     ForEach(artists) { artist in
                         NavigationLink(destination: ArtistDetailView(artist: artist.toYTArtist())) {
@@ -34,26 +25,28 @@ struct LibraryArtistsView: View {
                                     image
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
+                                        .clipShape(Circle())
                                 } placeholder: {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
+                                    Circle()
+                                        .fill(VibesColors.elevated)
                                 }
-                                .frame(width: (UIScreen.main.bounds.width - 48) / 2, height: (UIScreen.main.bounds.width - 48) / 2)
-                                .clipShape(Circle())
+                                .frame(width: 140, height: 140)
 
                                 Text(artist.name)
                                     .font(.body)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.primary)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(VibesColors.textPrimary)
+                                    .lineLimit(1)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding()
             }
+            Spacer(minLength: 140)
         }
+        .vibesBackground()
         .navigationTitle("Artists")
     }
 }

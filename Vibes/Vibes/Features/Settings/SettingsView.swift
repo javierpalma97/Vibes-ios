@@ -11,131 +11,220 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                // Account Section
-                Section(header: Text("Account")) {
-                    if authManager.isAuthenticated {
-                        HStack {
-                            Image(systemName: "person.circle.fill")
-                                .font(.largeTitle)
-                                .foregroundColor(.accentColor)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(authManager.accountName ?? "Signed In")
-                                    .font(.headline)
-
-                                if let email = authManager.accountEmail {
-                                    Text(email)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Account
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Account")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        if authManager.isAuthenticated {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(VibesColors.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(authManager.accountName ?? "Signed In")
+                                        .font(.headline)
+                                        .foregroundColor(VibesColors.textPrimary)
+                                    if let email = authManager.accountEmail {
+                                        Text(email)
+                                            .font(.caption)
+                                            .foregroundColor(VibesColors.textSecondary)
+                                    }
                                 }
+                                Spacer()
                             }
+                            Button("Sign Out", role: .destructive) {
+                                authManager.signOut()
+                            }
+                        } else {
+                            NavigationLink(destination: LoginView()) {
+                                HStack {
+                                    Image(systemName: "person.circle")
+                                        .foregroundColor(VibesColors.accent)
+                                    Text("Sign in to YouTube Music")
+                                        .foregroundColor(VibesColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(VibesColors.textTertiary)
+                                }
+                                .padding()
+                                .background(VibesColors.card)
+                                .cornerRadius(VibesRadius.row)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 8)
+                    }
+                    .padding(.horizontal)
 
-                        Button("Sign Out", role: .destructive) {
-                            authManager.signOut()
+                    // Playback
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Playback")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("Audio Quality")
+                                    .foregroundColor(VibesColors.textPrimary)
+                                Spacer()
+                                Picker("Audio Quality", selection: $audioQuality) {
+                                    Text("Auto").tag("auto")
+                                    Text("Low").tag("low")
+                                    Text("Medium").tag("medium")
+                                    Text("High").tag("high")
+                                }
+                                .pickerStyle(.menu)
+                                .tint(VibesColors.accent)
+                            }
+                            .padding(.vertical, 6)
+                            Divider().background(VibesColors.elevated)
+                            HStack {
+                                Text("Playback Speed")
+                                    .foregroundColor(VibesColors.textPrimary)
+                                Spacer()
+                                Picker("Playback Speed", selection: $playbackSpeed) {
+                                    Text("0.5x").tag(0.5)
+                                    Text("0.75x").tag(0.75)
+                                    Text("1.0x").tag(1.0)
+                                    Text("1.25x").tag(1.25)
+                                    Text("1.5x").tag(1.5)
+                                    Text("2.0x").tag(2.0)
+                                }
+                                .pickerStyle(.menu)
+                                .tint(VibesColors.accent)
+                            }
+                            .padding(.vertical, 6)
+                            .onChange(of: playbackSpeed) { _, newValue in
+                                playerManager.setPlaybackSpeed(newValue)
+                            }
+                            Divider().background(VibesColors.elevated)
+                            VibesToggleRow(title: "Skip Silence", isOn: $skipSilence)
+                            Divider().background(VibesColors.elevated)
+                            VibesToggleRow(title: "Normalize Audio", isOn: $normalizeAudio)
                         }
-                    } else {
-                        NavigationLink(destination: LoginView()) {
-                            Label("Sign in to YouTube Music", systemImage: "person.circle")
+                        .padding(.horizontal, 12)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
+                    }
+                    .padding(.horizontal)
+
+                    // Storage
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Storage")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        VStack(spacing: 0) {
+                            SettingsActionRow(title: "Clear Cache", action: clearCache)
+                            Divider().background(VibesColors.elevated)
+                            SettingsActionRow(title: "Clear Search History", action: clearSearchHistory)
+                            Divider().background(VibesColors.elevated)
+                            SettingsActionRow(title: "Delete All Data", destructive: true, action: deleteAllData)
                         }
+                        .padding(.horizontal, 12)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
                     }
-                }
+                    .padding(.horizontal)
 
-                // Debug Section (sin necesidad de Mac/Console) - arriba para evitar barra mini-player
-                Section(header: Text("Debug")) {
-                    NavigationLink(destination: DebugLogView()) {
-                        Label("Ver logs de reproducción", systemImage: "doc.text.magnifyingglass")
-                    }
-                }
-
-                // OAuth2 Section (MusicBot #1670)
-                Section(header: Text("YouTube OAuth2")) {
-                    let oauth = OAuthManager.shared
-                    if oauth.isAuthenticated {
-                        Label("OAuth conectado", systemImage: "checkmark.seal.fill").foregroundColor(.green)
-                        Button("Cerrar sesión OAuth", role: .destructive) { oauth.signOut() }
-                    } else {
-                        NavigationLink(destination: OAuthView()) {
-                            Label("Iniciar OAuth2 (TV) – si cookies falla", systemImage: "tv")
+                    // Debug
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Debug")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        NavigationLink(destination: DebugLogView()) {
+                            HStack {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .foregroundColor(VibesColors.accent)
+                                Text("Playback logs")
+                                    .foregroundColor(VibesColors.textPrimary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(VibesColors.textTertiary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(VibesColors.card)
+                            .cornerRadius(VibesRadius.row)
                         }
-                        Text("Usa cuenta burner. No requiere SAPISID.").font(.caption2).foregroundColor(.secondary)
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal)
+
+                    // About
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("About")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(VibesColors.textPrimary)
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("Version")
+                                    .foregroundColor(VibesColors.textPrimary)
+                                Spacer()
+                                Text("1.0.0")
+                                    .foregroundColor(VibesColors.textSecondary)
+                            }
+                            .padding(.vertical, 10)
+                            Divider().background(VibesColors.elevated)
+                            NavigationLink(destination: AboutView()) {
+                                HStack {
+                                    Text("About Vibes")
+                                        .foregroundColor(VibesColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(VibesColors.textTertiary)
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                            Divider().background(VibesColors.elevated)
+                            NavigationLink(destination: DisclaimerView()) {
+                                HStack {
+                                    Text("Disclaimer")
+                                        .foregroundColor(VibesColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(VibesColors.textTertiary)
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                            Divider().background(VibesColors.elevated)
+                            NavigationLink(destination: PrivacyView()) {
+                                HStack {
+                                    Text("Privacy Policy")
+                                        .foregroundColor(VibesColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(VibesColors.textTertiary)
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 12)
+                        .background(VibesColors.card)
+                        .cornerRadius(VibesRadius.row)
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 100)
                 }
-
-                // Playback Section
-                Section(header: Text("Playback")) {
-                    Picker("Audio Quality", selection: $audioQuality) {
-                        Text("Auto").tag("auto")
-                        Text("Low (48kbps)").tag("low")
-                        Text("Medium (128kbps)").tag("medium")
-                        Text("High (256kbps)").tag("high")
-                    }
-
-                    Picker("Playback Speed", selection: $playbackSpeed) {
-                        Text("0.5x").tag(0.5)
-                        Text("0.75x").tag(0.75)
-                        Text("1.0x (Normal)").tag(1.0)
-                        Text("1.25x").tag(1.25)
-                        Text("1.5x").tag(1.5)
-                        Text("2.0x").tag(2.0)
-                    }
-                    .onChange(of: playbackSpeed) { _, newValue in
-                        playerManager.setPlaybackSpeed(newValue)
-                    }
-
-                    Toggle("Skip Silence", isOn: $skipSilence)
-                    Toggle("Normalize Audio", isOn: $normalizeAudio)
-                }
-
-                // Cache Section
-                Section(header: Text("Storage")) {
-                    Button("Clear Cache") {
-                        clearCache()
-                    }
-
-                    Button("Clear Search History") {
-                        clearSearchHistory()
-                    }
-
-                    Button("Delete All Data", role: .destructive) {
-                        deleteAllData()
-                    }
-                }
-
-                // About Section
-                Section(header: Text("About")) {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
-
-                    Link(destination: URL(string: "https://github.com/example/vibes-ios")!) {
-                        Label("View Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
-                    }
-
-                    NavigationLink(destination: AboutView()) {
-                        Label("About Vibes", systemImage: "info.circle")
-                    }
-                }
-
-                // Legal Section
-                Section(header: Text("Legal")) {
-                    NavigationLink(destination: DisclaimerView()) {
-                        Label("Disclaimer", systemImage: "exclamationmark.triangle")
-                    }
-
-                    NavigationLink(destination: PrivacyView()) {
-                        Label("Privacy Policy", systemImage: "hand.raised")
-                    }
-                }
-
+                .padding(.top)
             }
+            .vibesBackground()
             .navigationTitle("Settings")
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+            .navigationBarTitleDisplayMode(.large)
         }
     }
 
@@ -147,15 +236,33 @@ struct SettingsView: View {
                 try? FileManager.default.removeItem(at: f)
             }
         }
+        dlog("Cache cleared")
     }
 
     private func clearSearchHistory() {
         LibraryManager.shared.clearSearchHistoryData()
+        dlog("Search history cleared")
     }
 
     private func deleteAllData() {
         LibraryManager.shared.deleteAllData()
         authManager.signOut()
+    }
+}
+
+private struct SettingsActionRow: View {
+    let title: String
+    var destructive: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .foregroundColor(destructive ? .red : VibesColors.textPrimary)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -165,42 +272,42 @@ struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // App Icon
                 Image(systemName: "music.note")
                     .font(.system(size: 80))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(VibesColors.accent)
                     .padding(.top, 40)
 
-                // App Name
                 Text("Vibes iOS")
                     .font(.largeTitle)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
 
                 Text("A YouTube Music client for iOS")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textSecondary)
 
                 Divider()
                     .padding(.vertical)
 
-                // Credits
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Credits")
                         .font(.headline)
+                        .foregroundColor(VibesColors.textPrimary)
 
                     Text("Vibes iOS is a port of the original Vibes Android app. It uses the InnerTube API to stream music from YouTube Music.")
                         .font(.body)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
 
                     Text("This app is for personal use only and is not affiliated with Google or YouTube.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                 }
                 .padding(.horizontal)
 
                 Spacer()
             }
         }
+        .vibesBackground()
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -215,6 +322,7 @@ struct DisclaimerView: View {
                 Text("Disclaimer")
                     .font(.title)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
                     .padding(.top)
 
                 Text("""
@@ -235,11 +343,13 @@ struct DisclaimerView: View {
                 By using this app, you acknowledge and accept these terms.
                 """)
                 .font(.body)
+                .foregroundColor(VibesColors.textSecondary)
 
                 Spacer()
             }
             .padding()
         }
+        .vibesBackground()
         .navigationTitle("Disclaimer")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -254,6 +364,7 @@ struct PrivacyView: View {
                 Text("Privacy Policy")
                     .font(.title)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
                     .padding(.top)
 
                 Text("""
@@ -263,7 +374,7 @@ struct PrivacyView: View {
 
                 **YouTube Account:**
 
-                When you sign in with your YouTube account, authentication cookies are stored locally on your device to maintain your session. These cookies are never shared with third parties.
+                When you sign in with your YouTube account, an OAuth token is stored securely on your device to maintain your session. It is never shared with third parties.
 
                 **Local Storage:**
 
@@ -278,12 +389,14 @@ struct PrivacyView: View {
                 This app interacts with YouTube Music's servers. Please refer to Google's privacy policy for information about how they handle your data.
                 """)
                 .font(.body)
+                .foregroundColor(VibesColors.textSecondary)
 
                 Spacer()
             }
             .padding()
         }
-        .navigationTitle("Privacy")
+        .vibesBackground()
+        .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

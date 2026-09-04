@@ -13,21 +13,81 @@ struct HomeView: View {
     @State private var selectedChip: HomeChip?
     @State private var previousHomePage: HomePage?
     @State private var errorMessage: String?
+    @State private var showSearch = false
 
     private let ytMusic = YouTubeMusic.shared
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    // Quick Access Buttons (only when no chip selected)
-                    if selectedChip == nil {
-                        QuickAccessSection()
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    // Search pill
+                    Button(action: { showSearch = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(VibesColors.textSecondary)
+                            Text("Search songs, artists, playlists...")
+                                .foregroundColor(VibesColors.textSecondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(VibesColors.elevated)
+                        .cornerRadius(VibesRadius.pill)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                    // For You
+                    if selectedChip == nil && !libraryManager.quickPicks.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            VibesSectionHeader(
+                                title: "For You",
+                                subtitle: "Personalized playlists and new releases",
+                                actionTitle: "",
+                                action: nil
+                            )
+                            .padding(.horizontal)
+                            QuickPicksCarousel(songs: libraryManager.quickPicks)
+                        }
                     }
 
-                    // Quick Picks (from most played albums in last 2 weeks - matching Android)
-                    if !libraryManager.quickPicks.isEmpty && selectedChip == nil {
-                        QuickPicksSection(songs: libraryManager.quickPicks)
+                    // Quick tiles
+                    if selectedChip == nil {
+                        HStack(spacing: 12) {
+                            NavigationLink(destination: LikedSongsPlaylistView()) {
+                                VibesQuickTileContent(icon: "heart", title: "My Favorites")
+                            }
+                            NavigationLink(destination: HistoryView()) {
+                                VibesQuickTileContent(icon: "clock.arrow.circlepath", title: "Recently Played")
+                            }
+                            NavigationLink(destination: NewReleasesView()) {
+                                VibesQuickTileContent(icon: "sparkles", title: "New Releases")
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                    }
+
+                    // Recently played banners
+                    if selectedChip == nil && !libraryManager.recentlyPlayed.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Recently Played")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(VibesColors.textPrimary)
+                                Spacer()
+                                NavigationLink(destination: HistoryView()) {
+                                    Text("See all")
+                                        .font(.subheadline)
+                                        .foregroundColor(VibesColors.accent)
+                                }
+                            }
+                            .padding(.horizontal)
+                            RecentlyPlayedCarousel(songs: Array(libraryManager.recentlyPlayed.prefix(10)))
+                        }
                     }
 
                     // Filter chips
@@ -55,17 +115,15 @@ struct HomeView: View {
                         }
                     }
 
-                    // Mood and Genres (only when no chip selected)
+                    // Mood and Genres
                     if selectedChip == nil, let genres = explorePage?.moodAndGenres, !genres.isEmpty {
                         MoodAndGenresSection(genres: genres)
                     }
 
-                    // Loading indicator for initial load
                     if isLoading && homePage == nil {
                         LoadingView()
                     }
 
-                    // Loading indicator for more content
                     if isLoadingMore {
                         HStack {
                             Spacer()
@@ -75,7 +133,6 @@ struct HomeView: View {
                         }
                     }
 
-                    // Infinite scroll trigger
                     if let continuation = homePage?.continuation, !isLoadingMore {
                         Color.clear
                             .frame(height: 1)
@@ -86,11 +143,11 @@ struct HomeView: View {
                             }
                     }
 
-                    // Bottom spacer for mini player
-                    Spacer(minLength: 120)
+                    Spacer(minLength: 140)
                 }
                 .padding(.top)
             }
+            .vibesBackground()
             .refreshable {
                 await refresh()
             }
@@ -101,12 +158,16 @@ struct HomeView: View {
                     NavigationLink(destination: AccountView()) {
                         Image(systemName: "person.circle")
                             .font(.title2)
+                            .foregroundColor(VibesColors.textPrimary)
                     }
                 }
             }
             .task {
                 await loadHome()
                 await loadExplore()
+            }
+            .navigationDestination(isPresented: $showSearch) {
+                SearchView()
             }
         }
     }
@@ -121,10 +182,8 @@ struct HomeView: View {
             let page = try await ytMusic.getHome(params: params)
             await MainActor.run {
                 if params == nil && selectedChip == nil {
-                    // Initial load or refresh - replace entirely
                     homePage = page
                 } else {
-                    // Chip filter - keep chips but update sections
                     homePage = HomePage(
                         chips: homePage?.chips ?? page.chips,
                         sections: page.sections,
@@ -167,7 +226,6 @@ struct HomeView: View {
         do {
             let page = try await ytMusic.getHome(continuation: continuation)
             await MainActor.run {
-                // Append new sections to existing ones
                 let existingSections = homePage?.sections ?? []
                 homePage = HomePage(
                     chips: homePage?.chips ?? [],
@@ -187,16 +245,13 @@ struct HomeView: View {
 
     private func toggleChip(_ chip: HomeChip) async {
         if chip == selectedChip {
-            // Deselect chip - restore previous home page
             await MainActor.run {
                 homePage = previousHomePage
                 previousHomePage = nil
                 selectedChip = nil
             }
         } else {
-            // Select new chip
             if selectedChip == nil {
-                // Save current state before filtering
                 await MainActor.run {
                     previousHomePage = homePage
                 }
@@ -206,7 +261,6 @@ struct HomeView: View {
                 selectedChip = chip
             }
 
-            // Load filtered content
             await loadHome(params: chip.params)
         }
     }
@@ -223,7 +277,107 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Quick Picks Section
+// MARK: - Quick Picks carousel (For You cards)
+
+struct QuickPicksCarousel: View {
+    let songs: [Song]
+    @EnvironmentObject var queueManager: QueueManager
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(songs.prefix(10)) { song in
+                    Button(action: {
+                        Task {
+                            await queueManager.setQueue([song])
+                        }
+                    }) {
+                        VibesPlaylistCard(
+                            title: song.title,
+                            subtitle: song.artistsText ?? "Unknown Artist",
+                            artworkUrl: song.thumbnailUrl,
+                            width: 150
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .songContextMenu(song: song)
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+}
+
+struct VibesQuickTileContent: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(VibesColors.textPrimary)
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(VibesColors.textPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(VibesColors.card)
+        .cornerRadius(VibesRadius.card)
+    }
+}
+
+// MARK: - Recently played banners
+
+struct RecentlyPlayedCarousel: View {
+    let songs: [Song]
+    @EnvironmentObject var queueManager: QueueManager
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(songs) { song in
+                    Button(action: {
+                        Task {
+                            await queueManager.setQueue([song])
+                        }
+                    }) {
+                        ZStack(alignment: .bottomLeading) {
+                            VibesArtwork(url: song.thumbnailUrl, size: 220, radius: 16)
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.75)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(width: 220, height: 220)
+                            .cornerRadius(16)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(song.title)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                Text(song.artistsText ?? "")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .lineLimit(1)
+                            }
+                            .padding(12)
+                        }
+                        .frame(width: 220, height: 220)
+                    }
+                    .buttonStyle(.plain)
+                    .songContextMenu(song: song)
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - Quick Picks Section (list style, reused by nobody else — kept for compat)
 
 struct QuickPicksSection: View {
     let songs: [Song]
@@ -235,9 +389,8 @@ struct QuickPicksSection: View {
                 Text("Quick Picks")
                     .font(.title2)
                     .fontWeight(.bold)
-
+                    .foregroundColor(VibesColors.textPrimary)
                 Spacer()
-
                 Button(action: {
                     Task {
                         await queueManager.setQueue(songs.shuffled())
@@ -248,15 +401,22 @@ struct QuickPicksSection: View {
                         Text("Shuffle")
                     }
                     .font(.subheadline)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(VibesColors.accent)
                 }
             }
             .padding(.horizontal)
 
-            // Grid layout for quick picks
-            LazyVGrid(columns: [GridItem(.flexible())], spacing: 8) {
+            LazyVStack(spacing: 4) {
                 ForEach(songs.prefix(8)) { song in
-                    QuickPickRow(song: song)
+                    Button(action: {
+                        Task {
+                            await queueManager.setQueue([song])
+                        }
+                    }) {
+                        VibesTrackRow(song: song)
+                    }
+                    .buttonStyle(.plain)
+                    .songContextMenu(song: song)
                 }
             }
             .padding(.horizontal)
@@ -274,40 +434,9 @@ struct QuickPickRow: View {
                 await queueManager.setQueue([song])
             }
         }) {
-            HStack(spacing: 12) {
-                AsyncImage(url: URL(string: song.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 56, height: 56)
-                .cornerRadius(8)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(song.title)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-
-                    Text(song.artistsText ?? "Unknown Artist")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-            }
-            .padding(.vertical, 4)
+            VibesTrackRow(song: song)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
         .songContextMenu(song: song)
     }
 }
@@ -316,23 +445,15 @@ struct QuickPickRow: View {
 
 struct RecentlyPlayedSection: View {
     let songs: [Song]
-    @EnvironmentObject var queueManager: QueueManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recently Played")
                 .font(.title2)
                 .fontWeight(.bold)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(songs) { song in
-                        LocalSongCard(song: song)
-                    }
-                }
-                .padding(.horizontal)
-            }
+            RecentlyPlayedCarousel(songs: songs)
         }
     }
 }
@@ -346,7 +467,7 @@ struct ChipsRow: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ForEach(chips.indices, id: \.self) { index in
                     let chip = chips[index]
                     ChipView(
@@ -376,8 +497,8 @@ struct ChipView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.accentColor : Color(UIColor.secondarySystemBackground))
-                .foregroundColor(isSelected ? .white : .primary)
+                .background(isSelected ? VibesColors.accent : VibesColors.elevated)
+                .foregroundColor(isSelected ? .black : VibesColors.textPrimary)
                 .cornerRadius(20)
         }
     }
@@ -392,30 +513,21 @@ struct HomeSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Section header
             HStack(spacing: 12) {
                 if let thumbnail = section.thumbnail {
-                    AsyncImage(url: URL(string: thumbnail)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                    }
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    VibesArtwork(url: thumbnail, size: 40, radius: 8)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(section.title)
                         .font(.title2)
                         .fontWeight(.bold)
+                        .foregroundColor(VibesColors.textPrimary)
 
                     if let label = section.label {
                         Text(label)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(VibesColors.textSecondary)
                     }
                 }
 
@@ -423,15 +535,14 @@ struct HomeSectionView: View {
 
                 if section.browseId != nil {
                     Image(systemName: "chevron.right")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
                         .font(.caption)
                 }
             }
             .padding(.horizontal)
 
-            // Section items
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     ForEach(section.items.indices, id: \.self) { index in
                         HomeItemView(item: section.items[index])
                     }
@@ -480,19 +591,20 @@ struct MoodAndGenresSection: View {
                 Text("Mood & Genres")
                     .font(.title2)
                     .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
 
                 Spacer()
 
                 NavigationLink(destination: MoodAndGenresView()) {
                     Text("See all")
                         .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(VibesColors.accent)
                 }
             }
             .padding(.horizontal)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(genres.prefix(8)) { genre in
                         MoodGenreButton(genre: genre)
                     }
@@ -511,11 +623,11 @@ struct MoodGenreButton: View {
             Text(genre.title)
                 .font(.subheadline)
                 .fontWeight(.medium)
-                .foregroundColor(.primary)
+                .foregroundColor(VibesColors.textPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(8)
+                .background(VibesColors.elevated)
+                .cornerRadius(10)
         }
     }
 }
@@ -527,31 +639,29 @@ struct LoadingView: View {
         VStack(spacing: 16) {
             ForEach(0..<3, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 12) {
-                    // Title placeholder
                     Rectangle()
-                        .fill(Color.gray.opacity(0.3))
+                        .fill(VibesColors.elevated)
                         .frame(width: 150, height: 24)
                         .cornerRadius(4)
                         .padding(.horizontal)
 
-                    // Items placeholder
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 14) {
                             ForEach(0..<4, id: \.self) { _ in
                                 VStack(alignment: .leading, spacing: 8) {
                                     Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(width: 160, height: 160)
-                                        .cornerRadius(12)
+                                        .fill(VibesColors.elevated)
+                                        .frame(width: 150, height: 150)
+                                        .cornerRadius(14)
 
                                     Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(width: 120, height: 16)
+                                        .fill(VibesColors.elevated)
+                                        .frame(width: 110, height: 14)
                                         .cornerRadius(4)
 
                                     Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(width: 80, height: 12)
+                                        .fill(VibesColors.elevated)
+                                        .frame(width: 75, height: 12)
                                         .cornerRadius(4)
                                 }
                             }
@@ -572,18 +682,20 @@ struct ErrorView: View {
     let onRetry: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
-                .foregroundColor(.secondary)
+                .foregroundColor(VibesColors.textTertiary)
 
             Text(message)
-                .foregroundColor(.secondary)
+                .foregroundColor(VibesColors.textSecondary)
 
             Button("Retry") {
                 onRetry()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
+            .tint(VibesColors.accent)
+            .foregroundColor(.black)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -603,33 +715,15 @@ struct LocalSongCard: View {
                 await queueManager.setQueue([song])
             }
         }) {
-            VStack(alignment: .leading, spacing: 8) {
-                AsyncImage(url: URL(string: song.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 160, height: 160)
-                .cornerRadius(12)
-
-                Text(song.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .frame(width: 160, alignment: .leading)
-
-                Text(song.artistsText ?? "")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .frame(width: 160, alignment: .leading)
-            }
+            VibesPlaylistCard(
+                title: song.title,
+                subtitle: song.artistsText ?? "",
+                artworkUrl: song.thumbnailUrl,
+                width: 150
+            )
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
+        .songContextMenu(song: song)
     }
 }
 
@@ -643,40 +737,20 @@ struct SongCard: View {
     var body: some View {
         Button(action: {
             Task {
-                // Save song and play it
                 await libraryManager.saveSong(ytSong)
                 if let song = await libraryManager.getSong(id: ytSong.id) {
                     await queueManager.setQueue([song])
                 }
             }
         }) {
-            VStack(alignment: .leading, spacing: 8) {
-                AsyncImage(url: URL(string: ytSong.thumbnailUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 160, height: 160)
-                .cornerRadius(12)
-
-                Text(ytSong.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .frame(width: 160, alignment: .leading)
-
-                Text(ytSong.artists)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .frame(width: 160, alignment: .leading)
-            }
+            VibesPlaylistCard(
+                title: ytSong.title,
+                subtitle: ytSong.artists,
+                artworkUrl: ytSong.thumbnailUrl,
+                width: 150
+            )
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
     }
 }
 
@@ -686,31 +760,12 @@ struct AlbumCard: View {
     let album: YTAlbum
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            AsyncImage(url: URL(string: album.thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .frame(width: 160, height: 160)
-            .cornerRadius(12)
-
-            Text(album.title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .frame(width: 160, alignment: .leading)
-
-            Text(album.artists)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .frame(width: 160, alignment: .leading)
-        }
+        VibesPlaylistCard(
+            title: album.title,
+            subtitle: album.artists,
+            artworkUrl: album.thumbnailUrl,
+            width: 150
+        )
     }
 }
 
@@ -728,22 +783,23 @@ struct ArtistCard: View {
                     .clipShape(Circle())
             } placeholder: {
                 Circle()
-                    .fill(Color.gray.opacity(0.3))
+                    .fill(VibesColors.elevated)
             }
-            .frame(width: 160, height: 160)
+            .frame(width: 150, height: 150)
 
             Text(artist.name)
                 .font(.subheadline)
                 .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .frame(width: 160, alignment: .leading)
+                .foregroundColor(VibesColors.textPrimary)
+                .lineLimit(1)
+                .frame(width: 150, alignment: .leading)
 
             Text("Artist")
                 .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(width: 160, alignment: .leading)
+                .foregroundColor(VibesColors.textSecondary)
+                .frame(width: 150, alignment: .leading)
         }
+        .frame(width: 150)
     }
 }
 
@@ -753,37 +809,12 @@ struct PlaylistCard: View {
     let ytPlaylist: YTPlaylist
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            AsyncImage(url: URL(string: ytPlaylist.thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .overlay(
-                        Image(systemName: "music.note.list")
-                            .foregroundColor(.white)
-                    )
-            }
-            .frame(width: 160, height: 160)
-            .cornerRadius(12)
-
-            Text(ytPlaylist.name)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .frame(width: 160, alignment: .leading)
-
-            if let author = ytPlaylist.author {
-                Text(author)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .frame(width: 160, alignment: .leading)
-            }
-        }
+        VibesPlaylistCard(
+            title: ytPlaylist.name,
+            subtitle: ytPlaylist.author ?? "",
+            artworkUrl: ytPlaylist.thumbnailUrl,
+            width: 150
+        )
     }
 }
 
@@ -797,7 +828,7 @@ struct QuickAccessSection: View {
                     QuickAccessButton(
                         icon: "chart.line.uptrend.xyaxis",
                         title: "Charts",
-                        color: .orange
+                        color: VibesColors.accent
                     )
                 }
 
@@ -805,7 +836,7 @@ struct QuickAccessSection: View {
                     QuickAccessButton(
                         icon: "sparkles",
                         title: "New Releases",
-                        color: .purple
+                        color: VibesColors.accent
                     )
                 }
 
@@ -813,7 +844,7 @@ struct QuickAccessSection: View {
                     QuickAccessButton(
                         icon: "clock.arrow.circlepath",
                         title: "History",
-                        color: .blue
+                        color: VibesColors.accent
                     )
                 }
 
@@ -821,7 +852,7 @@ struct QuickAccessSection: View {
                     QuickAccessButton(
                         icon: "theatermasks",
                         title: "Moods",
-                        color: .green
+                        color: VibesColors.accent
                     )
                 }
 
@@ -829,7 +860,7 @@ struct QuickAccessSection: View {
                     QuickAccessButton(
                         icon: "chart.bar.fill",
                         title: "Stats",
-                        color: .pink
+                        color: VibesColors.accent
                     )
                 }
             }
@@ -847,15 +878,15 @@ struct QuickAccessButton: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(width: 56, height: 56)
                 .background(color)
-                .cornerRadius(12)
+                .cornerRadius(14)
 
             Text(title)
                 .font(.caption)
                 .fontWeight(.medium)
-                .foregroundColor(.primary)
+                .foregroundColor(VibesColors.textPrimary)
         }
         .frame(width: 80)
     }

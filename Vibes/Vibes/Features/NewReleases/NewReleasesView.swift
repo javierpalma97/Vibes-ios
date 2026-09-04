@@ -14,42 +14,58 @@ struct NewReleasesView: View {
 
     var body: some View {
         ScrollView {
-            if isLoading {
-                ProgressView()
+            VStack(alignment: .leading, spacing: 16) {
+                Text("New Releases")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(VibesColors.textPrimary)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                } else if let error = errorMessage {
+                    VStack(spacing: 14) {
+                        Image(systemName: "sparkles")
+                            .font(.largeTitle)
+                            .foregroundColor(VibesColors.textTertiary)
+
+                        Text(error)
+                            .foregroundColor(VibesColors.textSecondary)
+
+                        Button("Retry") {
+                            Task {
+                                await loadNewReleases()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(VibesColors.accent)
+                        .foregroundColor(.black)
+                    }
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 100)
-            } else if let error = errorMessage {
-                VStack(spacing: 16) {
-                    Image(systemName: "music.note.house")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-
-                    Text(error)
-                        .foregroundColor(.secondary)
-
-                    Button("Retry") {
-                        Task {
-                            await loadNewReleases()
+                    .padding(.top, 60)
+                } else if albums.isEmpty {
+                    VibesEmptyState(icon: "sparkles", title: "No new releases")
+                } else {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(albums.indices, id: \.self) { index in
+                            NavigationLink(destination: AlbumDetailView(album: albums[index])) {
+                                NewReleaseAlbumCard(album: albums[index])
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .padding(.horizontal)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 100)
-            } else {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(albums.indices, id: \.self) { index in
-                        NavigationLink(destination: AlbumDetailView(album: albums[index])) {
-                            NewReleaseAlbumCard(album: albums[index])
-                        }
-                    }
-                }
-                .padding()
             }
 
-            Spacer(minLength: 120)
+            Spacer(minLength: 140)
         }
+        .vibesBackground()
         .navigationTitle("New Releases")
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadNewReleases()
         }
@@ -84,32 +100,24 @@ struct NewReleaseAlbumCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            AsyncImage(url: URL(string: album.thumbnailUrl ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-            }
-            .aspectRatio(1, contentMode: .fit)
-            .cornerRadius(12)
+            VibesArtwork(url: album.thumbnailUrl, size: 160, radius: 14)
+                .frame(maxWidth: .infinity)
 
             Text(album.title)
                 .font(.subheadline)
                 .fontWeight(.medium)
-                .foregroundColor(.primary)
+                .foregroundColor(VibesColors.textPrimary)
                 .lineLimit(2)
 
             Text(album.artists)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(VibesColors.textSecondary)
                 .lineLimit(1)
 
             if let year = album.year {
                 Text(year)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(VibesColors.textTertiary)
             }
         }
     }
