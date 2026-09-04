@@ -3,13 +3,13 @@ import SwiftUI
 // MARK: - Vibes Design System (mockup: dark + mint accent, rounded cards)
 
 enum VibesColors {
-    static let background = Color(red: 0.075, green: 0.075, blue: 0.09)
-    static let card = Color(red: 0.13, green: 0.13, blue: 0.15)
-    static let elevated = Color(red: 0.17, green: 0.17, blue: 0.20)
-    static let accent = Color(red: 0.37, green: 0.92, blue: 0.83)
-    static let accentDim = Color(red: 0.37, green: 0.92, blue: 0.83).opacity(0.15)
+    static let background = Color(red: 0.08, green: 0.085, blue: 0.11)
+    static let card = Color(red: 0.13, green: 0.14, blue: 0.18)
+    static let elevated = Color(red: 0.18, green: 0.19, blue: 0.24)
+    static let accent = Color(red: 0.24, green: 0.90, blue: 0.78)
+    static let accentDim = Color(red: 0.24, green: 0.90, blue: 0.78).opacity(0.15)
     static let textPrimary = Color.white
-    static let textSecondary = Color.white.opacity(0.6)
+    static let textSecondary = Color.white.opacity(0.65)
     static let textTertiary = Color.white.opacity(0.4)
 }
 

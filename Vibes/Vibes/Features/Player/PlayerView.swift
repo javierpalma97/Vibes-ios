@@ -21,7 +21,15 @@ struct PlayerView: View {
 
     var body: some View {
         ZStack {
-            VibesColors.background.ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    Color(red: 0.15, green: 0.16, blue: 0.22),
+                    Color(red: 0.08, green: 0.085, blue: 0.11)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header
@@ -123,38 +131,53 @@ struct PlayerView: View {
                         }
 
                         // Controls
-                        HStack(spacing: 36) {
+                        HStack {
                             Button(action: {
                                 queueManager.toggleShuffle()
                             }) {
                                 Image(systemName: "shuffle")
-                                    .font(.title2)
+                                    .font(.title3)
                                     .foregroundColor(playerManager.isShuffleEnabled ? VibesColors.accent : VibesColors.textTertiary)
                             }
+
+                            Spacer()
 
                             Button(action: {
                                 playerManager.playPrevious()
                             }) {
                                 Image(systemName: "backward.fill")
-                                    .font(.largeTitle)
+                                    .font(.title)
                                     .foregroundColor(VibesColors.textPrimary)
                             }
+
+                            Spacer()
 
                             Button(action: {
                                 playerManager.togglePlayPause()
                             }) {
-                                Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                    .font(.system(size: 76))
-                                    .foregroundColor(.white)
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: 68, height: 68)
+                                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                                    Image(systemName: playerManager.isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.title)
+                                        .foregroundColor(.black)
+                                        .offset(x: (!playerManager.isPlaying) ? 2 : 0)
+                                }
                             }
+
+                            Spacer()
 
                             Button(action: {
                                 playerManager.playNext()
                             }) {
                                 Image(systemName: "forward.fill")
-                                    .font(.largeTitle)
+                                    .font(.title)
                                     .foregroundColor(VibesColors.textPrimary)
                             }
+
+                            Spacer()
 
                             Button(action: {
                                 switch playerManager.repeatMode {
@@ -167,11 +190,12 @@ struct PlayerView: View {
                                 }
                             }) {
                                 Image(systemName: repeatIcon)
-                                    .font(.title2)
+                                    .font(.title3)
                                     .foregroundColor(playerManager.repeatMode != .off ? VibesColors.accent : VibesColors.textTertiary)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 36)
+                        .padding(.vertical, 8)
 
                         // Secondary row
                         HStack(spacing: 28) {
