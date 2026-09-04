@@ -518,7 +518,7 @@ class LibraryManager: ObservableObject {
         try? context.save()
 
         // Sync online with YouTube Music if user is authenticated
-        if ytMusic.client.isAuthenticated && playlist.playlistType == .youtube {
+        if InnerTubeClient.shared.isAuthenticated && playlist.playlistType == .youtube {
             do {
                 try await ytMusic.addSongToPlaylist(playlistId: playlist.id, videoId: song.id)
                 dlog("✅ [LibraryManager] Synced song \(song.title) to online playlist \(playlist.name)")
