@@ -89,9 +89,15 @@ struct ContentView: View {
 
     private var ipadLayout: some View {
         NavigationSplitView {
-            List(VibesTab.allCases, id: \.self, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
-                    .foregroundColor(selectedTab == tab ? VibesColors.accent : VibesColors.textPrimary)
+            List {
+                ForEach(VibesTab.allCases, id: \.self) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        Label(tab.rawValue, systemImage: tab.icon)
+                            .foregroundColor(selectedTab == tab ? VibesColors.accent : VibesColors.textPrimary)
+                    }
+                }
             }
             .navigationTitle("Vibes")
             .vibesBackground()

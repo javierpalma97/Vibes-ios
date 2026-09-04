@@ -201,7 +201,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                         }
                         if let thumbnailUrl = song.thumbnailUrl {
                             Task {
-                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                if let image = await self.loadImage(from: thumbnailUrl) {
                                     await MainActor.run {
                                         item.setImage(image)
                                     }
@@ -223,7 +223,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                         }
                         if let thumbnailUrl = playlist.thumbnailUrl {
                             Task {
-                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                if let image = await self.loadImage(from: thumbnailUrl) {
                                     await MainActor.run {
                                         item.setImage(image)
                                     }
@@ -241,7 +241,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                         }
                         if let thumbnailUrl = album.thumbnailUrl {
                             Task {
-                                if let image = await self?.loadImage(from: thumbnailUrl) {
+                                if let image = await self.loadImage(from: thumbnailUrl) {
                                     await MainActor.run {
                                         item.setImage(image)
                                     }
