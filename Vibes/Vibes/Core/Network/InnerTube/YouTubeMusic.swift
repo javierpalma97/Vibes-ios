@@ -296,14 +296,15 @@ class YouTubeMusic {
         // ANDROID/IOS van sin auth (shouldSendAuth=false) y tiran 206 aunque estés logueado.
         var clients: [InnerTubeClientType] = []
         if client.hasBearer && !client.hasCookieAuth {
-            // Bearer-only (OAuth without cookies): VISIONOS (no 1MB throttling) > TV (supports bearer)
-            clients.append(contentsOf: [.visionOS, .tv, .tvEmbedded, .android, .ios])
+            // Bearer-only (OAuth without cookies): VISIONOS (no 1MB throttling) > TV (supports bearer).
+            // tvEmbedded MUERTO ("no longer supported") → fuera.
+            clients.append(contentsOf: [.visionOS, .tv, .android, .ios])
         } else if client.isAuthenticated {
             // VISIONOS primero: sus URLs no sufren el muro de 1MB.
-            clients.append(contentsOf: [.visionOS, .tv, .tvEmbedded, .androidMusic, .android, .ios])
+            clients.append(contentsOf: [.visionOS, .tv, .androidMusic, .android, .ios])
         } else {
             // Unauthenticated: VISIONOS (sin throttling) > ANDROID > IOS
-            clients.append(contentsOf: [.visionOS, .android, .ios, .tvEmbedded, .androidVR])
+            clients.append(contentsOf: [.visionOS, .android, .ios, .androidVR])
         }
 
         var lastError: Error?
@@ -1198,13 +1199,21 @@ class YouTubeMusic {
     func getPlaylist(browseId: String) async throws -> (YTPlaylist, [YTSong]) {
         // Si hay sesión, primero prueba autenticado (TV/IOS/WEB_REMIX con Bearer/cookies) para listas privadas (VLLM).
         // Si falla, cae a browse público para listas públicas.
+        // El servidor EXIGE prefijo VL (verificado: PL... → 400, VLPL... → 200).
+        // Se normaliza solo para las peticiones; el id guardado no cambia.
+        let requestId: String
+        if (browseId.hasPrefix("PL") || browseId.hasPrefix("OLAK")) && !browseId.hasPrefix("VL") {
+            requestId = "VL" + browseId
+        } else {
+            requestId = browseId
+        }
         let response: BrowseResponse
         if client.isAuthenticated {
             // IDs privados: el browse público nunca puede funcionar (VLLM/FEmusic_*
             // sin auth = sign-in → authenticationExpired). Ir directo a parse+raw.
             let isPrivateId = browseId == "VLLM" || browseId.hasPrefix("FEmusic_")
             do {
-                let ar = try await browseAuthenticated(browseId: browseId)
+                let ar = try await browseAuthenticated(browseId: requestId)
                 // Shell TV (Bearer en playlist PÚBLICA): HTTP 200 sin contenido parseable
                 // (ni header, ni twoColumn, ni singleColumn). Tratar como fallo para caer
                 // al browse público en vez de devolver lista vacía / invalidResponse.
@@ -1219,10 +1228,10 @@ class YouTubeMusic {
                 // IDs privados: no reintentar en público (solo daría sign-in/authExpired)
                 if isPrivateId { throw error }
                 await MainActor.run { DebugLogger.shared.log("⚠️ getPlaylist \(browseId) auth falló (\(error)), probando público") }
-                response = try await browse(browseId: browseId)
+                response = try await browse(browseId: requestId)
             }
         } else {
-            response = try await browse(browseId: browseId)
+            response = try await browse(browseId: requestId)
         }
 
         // Check for auth errors (when authenticated but cookies expired, YouTube returns sign-in prompt)
@@ -1435,7 +1444,7 @@ class YouTubeMusic {
             // Fallback raw genérico antes de tirar.
             if client.isAuthenticated {
                 do {
-                    let raw = try await browseRawAuthenticated(browseId: browseId)
+                    let raw = try await browseRawAuthenticated(browseId: requestId)
                     let rawList = rawSongs(raw)
                     await MainActor.run { DebugLogger.shared.log("📀 raw fallback \(browseId) songs=\(rawList.count)") }
                     if !rawList.isEmpty {
@@ -1542,7 +1551,7 @@ class YouTubeMusic {
         // Si tipado da 0 pero hay sesión (TV shape), prueba raw genérico (tu VLLM OK via tv → 0 songs).
         if songsWithThumbnails.isEmpty && client.isAuthenticated {
             do {
-                let raw = try await browseRawAuthenticated(browseId: browseId)
+                let raw = try await browseRawAuthenticated(browseId: requestId)
                 let rawList = rawSongs(raw)
                 await MainActor.run { DebugLogger.shared.log("📀 raw fallback2 \(browseId) songs=\(rawList.count)") }
                 if !rawList.isEmpty {
@@ -1562,7 +1571,7 @@ class YouTubeMusic {
             if !isPrivateId {
                 do {
                     let raw = try await client.makeRawRequest(
-                        endpoint: "browse", body: ["browseId": browseId],
+                        endpoint: "browse", body: ["browseId": requestId],
                         clientType: .webRemix, forceNoAuth: true
                     )
                     let rawList = rawSongs(raw)
@@ -2787,7 +2796,11 @@ class YouTubeMusic {
                 endpoint: "browse", body: ["continuation": tok],
                 clientType: .tv, forceNoAuth: false
             )
-            await MainActor.run { DebugLogger.shared.log("📑 tab continuation seguida items?") }
+            await MainActor.run { DebugLogger.shared.log("📑 tab continuation seguida keys=\(dict.keys.sorted())") }
+            if let data = try? JSONSerialization.data(withJSONObject: dict),
+               let sample = String(data: data, encoding: .utf8) {
+                await MainActor.run { DebugLogger.shared.log("🔍 tab continuation sample=\(sample.prefix(1500))") }
+            }
             tiles = rawTiles(dict)
         } catch {
             await MainActor.run { DebugLogger.shared.log("❌ tab continuation \(error)") }

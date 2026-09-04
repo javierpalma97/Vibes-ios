@@ -221,8 +221,11 @@ struct PlayerResponse: Codable {
     let assets: Assets?
 
     struct VideoDetails: Codable {
-        let videoId: String
-        let title: String
+        // videoId/title opcionales: respuestas de error (TV bot-check) los omiten y
+        // antes rompían el decode entero (keyNotFound title) en vez de llegar al
+        // playabilityStatus.
+        let videoId: String?
+        let title: String?
         let lengthSeconds: String?
         let channelId: String?
         let author: String?

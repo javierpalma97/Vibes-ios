@@ -104,6 +104,25 @@ class InnerTubeClient {
     private var dataSyncId: String?
     private var cookies: String?  // All cookies (for persistence)
     private var cookieMap: [String: String] = [:]  // Parsed cookies for SAPISIDHASH
+    // Visitor cosechado de responseContext.visitorData (verificado: VISIONOS exige
+    // visitor VÁLIDO; el default escapado provoca bot-check). Se actualiza solo.
+    private var harvestedVisitorData: String?
+
+    /// Login > cosechado > default. Solo VISIONOS lo usa (blast radius mínimo).
+    var resolvedVisitorData: String {
+        if let v = visitorData, !v.isEmpty { return v }
+        if let h = harvestedVisitorData, !h.isEmpty { return h }
+        return defaultVisitorData
+    }
+
+    private func harvestVisitorData(from data: Data) {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rc = json["responseContext"] as? [String: Any],
+              let vd = rc["visitorData"] as? String, !vd.isEmpty,
+              vd != visitorData, vd != harvestedVisitorData else { return }
+        harvestedVisitorData = vd
+        UserDefaults.standard.set(vd, forKey: "innerTubeHarvestedVisitor")
+    }
 
     // Custom URLSession that doesn't override User-Agent
     private lazy var urlSession: URLSession = {
@@ -176,6 +195,7 @@ class InnerTubeClient {
         cookies = UserDefaults.standard.string(forKey: "innerTubeCookies")
         visitorData = UserDefaults.standard.string(forKey: "innerTubeVisitorData")
         dataSyncId = UserDefaults.standard.string(forKey: "innerTubeDataSyncId")
+        harvestedVisitorData = UserDefaults.standard.string(forKey: "innerTubeHarvestedVisitor")
 
         // Clean up dataSyncId if it has trailing pipes (migration fix)
         if let rawDataSyncId = dataSyncId, rawDataSyncId.hasSuffix("||") || rawDataSyncId.hasSuffix("|") {
@@ -241,13 +261,15 @@ class InnerTubeClient {
             thirdParty = InnerTubeContext.ThirdPartyInfo(embedUrl: "https://www.youtube.com/watch?v=\(videoId)")
         }
 
+        // VISIONOS exige visitor válido (cosechado o de login); el default escapado = bot-check
+        let contextVisitor = clientType == .visionOS ? resolvedVisitorData : (visitorData ?? defaultVisitorData)
         return InnerTubeContext(
             client: InnerTubeContext.ClientInfo(
                 clientName: clientName,
                 clientVersion: clientVersion,
                 gl: "US",
                 hl: "en",
-                visitorData: visitorData ?? defaultVisitorData,
+                visitorData: contextVisitor,
                 deviceMake: deviceMake,
                 deviceModel: deviceModel,
                 osName: osName,
@@ -325,7 +347,7 @@ class InnerTubeClient {
             request.setValue(clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
             request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
             request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
-            request.setValue(visitorData ?? defaultVisitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
+            request.setValue(resolvedVisitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
         } else {
             // Safari real envía el nombre NUMÉRICO para WEB_REMIX ("67", verificado mitmproxy)
             let headerName = clientType == .webRemix ? "67" : clientName
@@ -451,6 +473,7 @@ class InnerTubeClient {
 
         // Use custom URLSession that respects User-Agent header
         let (data, response) = try await urlSession.data(for: request)
+        harvestVisitorData(from: data)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw InnerTubeError.invalidResponse
@@ -494,6 +517,7 @@ class InnerTubeClient {
             throw InnerTubeError.invalidRequest
         }
         let (data, response) = try await urlSession.data(for: request)
+        harvestVisitorData(from: data)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             let bodyPreview = String(data: data.prefix(1000), encoding: .utf8) ?? ""
