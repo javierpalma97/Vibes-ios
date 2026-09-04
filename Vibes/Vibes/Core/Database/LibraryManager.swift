@@ -176,10 +176,101 @@ class LibraryManager: ObservableObject {
             // Don't throw - partial sync is okay
         }
 
+        // Sync albums
+        do {
+            let ytAlbums = try await ytMusic.getLibraryAlbums()
+            print("📥 [LibraryManager] Syncing \(ytAlbums.count) albums...")
+            await MainActor.run { DebugLogger.shared.log("📥 getLibraryAlbums \(ytAlbums.count)") }
+            for ytAlbum in ytAlbums {
+                await saveAlbum(ytAlbum, skipReload: true)
+            }
+            print("✅ [LibraryManager] Synced \(ytAlbums.count) albums")
+        } catch {
+            print("⚠️ [LibraryManager] Failed to sync albums: \(error)")
+        }
+
+        // Sync artists
+        do {
+            let ytArtists = try await ytMusic.getLibraryArtists()
+            print("📥 [LibraryManager] Syncing \(ytArtists.count) artists...")
+            await MainActor.run { DebugLogger.shared.log("📥 getLibraryArtists \(ytArtists.count)") }
+            for ytArtist in ytArtists {
+                await saveArtist(ytArtist, skipReload: true)
+            }
+            print("✅ [LibraryManager] Synced \(ytArtists.count) artists")
+        } catch {
+            print("⚠️ [LibraryManager] Failed to sync artists: \(error)")
+        }
+
         // Reload local data once at the end
         print("🔄 [LibraryManager] Reloading library data...")
         await loadLocalData()
         print("✅ [LibraryManager] Library sync complete")
+    }
+
+    func saveAlbum(_ ytAlbum: YTAlbum, skipReload: Bool = false) async {
+        guard let context = modelContext else { return }
+
+        let albumId = ytAlbum.id
+        let descriptor = FetchDescriptor<Album>(
+            predicate: #Predicate<Album> { album in
+                album.id == albumId
+            }
+        )
+
+        let existing = try? context.fetch(descriptor).first
+        if let existing = existing {
+            existing.title = ytAlbum.title
+            existing.artistsText = ytAlbum.artists
+            existing.thumbnailUrl = ytAlbum.thumbnailUrl
+            existing.dateModified = Date()
+        } else {
+            let album = Album(
+                id: ytAlbum.id,
+                title: ytAlbum.title,
+                artistsText: ytAlbum.artists,
+                year: ytAlbum.year,
+                thumbnailUrl: ytAlbum.thumbnailUrl,
+                liked: true
+            )
+            context.insert(album)
+        }
+
+        try? context.save()
+        if !skipReload {
+            await loadLocalData()
+        }
+    }
+
+    func saveArtist(_ ytArtist: YTArtist, skipReload: Bool = false) async {
+        guard let context = modelContext else { return }
+
+        let artistId = ytArtist.id
+        let descriptor = FetchDescriptor<Artist>(
+            predicate: #Predicate<Artist> { artist in
+                artist.id == artistId
+            }
+        )
+
+        let existing = try? context.fetch(descriptor).first
+        if let existing = existing {
+            existing.name = ytArtist.name
+            existing.thumbnailUrl = ytArtist.thumbnailUrl
+            existing.dateModified = Date()
+        } else {
+            let artist = Artist(
+                id: ytArtist.id,
+                name: ytArtist.name,
+                thumbnailUrl: ytArtist.thumbnailUrl,
+                isSubscribed: true
+            )
+            context.insert(artist)
+        }
+
+        try? context.save()
+        if !skipReload {
+            await loadLocalData()
+        }
     }
 
     // MARK: - Song Management
@@ -510,7 +601,8 @@ class LibraryManager: ObservableObject {
 
             // Not in database, fetch from YouTube
             do {
-                let browseId = playlist.browseId?.hasPrefix("VL") == true ? playlist.browseId! : "VL\(playlist.id)"
+                let rawId = playlist.browseId ?? playlist.id
+                let browseId = (rawId.hasPrefix("VL") || rawId.hasPrefix("PL") || rawId.hasPrefix("FEmusic_") || rawId == "VLLM" || rawId.hasPrefix("MPSP")) ? rawId : "VL\(rawId)"
                 let (ytPlaylist, ytSongs) = try await ytMusic.getPlaylist(browseId: browseId)
 
                 // Update the playlist in database with correct song count
