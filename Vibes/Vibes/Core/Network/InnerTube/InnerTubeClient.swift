@@ -350,12 +350,12 @@ class InnerTubeClient {
             if forceNoAuth { return false }
             if !isAuthenticated { return false }
             // Prevent auth for player endpoint on clients that don't support Bearer or SAPISIDHASH properly
-            // Android, iOS, and VisionOS never use auth for player. TV uses auth only when Bearer is available.
-            if endpoint == "player" && (clientType == .android || clientType == .ios || clientType == .visionOS) {
-                return false
-            }
-            // TV client without bearer token should also avoid auth for player (cookies alone aren't sufficient)
-            if endpoint == "player" && clientType == .tv && OAuthManager.bearerHeaderSync == nil {
+            // Android, iOS, VisionOS, webRemix, etc. fail with 400/403 when auth is sent on /player.
+            // TV uses auth ONLY when OAuth Bearer is available.
+            if endpoint == "player" {
+                if clientType == .tv && OAuthManager.bearerHeaderSync != nil {
+                    return true
+                }
                 return false
             }
             return true
