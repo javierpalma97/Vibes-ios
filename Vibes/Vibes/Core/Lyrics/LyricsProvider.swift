@@ -42,12 +42,13 @@ class LrcLibProvider: LyricsProvider {
             return diff1 < diff2
         })
 
-        guard let match = bestMatch, abs(match.duration - songDuration) < 5.0 else {
-            dlog("⚠️ [LrcLib] No match found within duration threshold")
-            return nil
+        if let match = bestMatch, abs(match.duration - songDuration) < 30.0 {
+            return parseLrcLibResult(match, songId: song.id)
+        } else if let first = results.first {
+            return parseLrcLibResult(first, songId: song.id)
         }
 
-        return parseLrcLibResult(match, songId: song.id)
+        return nil
     }
 
     private func parseLrcLibResult(_ result: LrcLibSearchResult, songId: String) -> Lyrics? {

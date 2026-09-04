@@ -120,7 +120,7 @@ struct AccountHeader: View {
                     .foregroundColor(VibesColors.textTertiary)
             }
 
-            Text(authManager.accountName ?? "Guest")
+            Text(authManager.accountName ?? (authManager.isAuthenticated ? "Cuenta de YouTube Music" : "Invitado"))
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(VibesColors.textPrimary)
@@ -132,7 +132,7 @@ struct AccountHeader: View {
             }
 
             if authManager.isAuthenticated {
-                Button("Sign Out") {
+                Button("Cerrar sesión") {
                     authManager.signOut()
                 }
                 .buttonStyle(.bordered)
@@ -148,7 +148,7 @@ struct AccountHeader: View {
 struct QuickActionsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Actions")
+            Text("Acciones rápidas")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .foregroundColor(VibesColors.textPrimary)
@@ -159,21 +159,21 @@ struct QuickActionsSection: View {
                     NavigationLink(destination: HistoryView()) {
                         QuickActionCard(
                             icon: "clock.arrow.circlepath",
-                            title: "History"
+                            title: "Historial"
                         )
                     }
 
                     NavigationLink(destination: StatsView()) {
                         QuickActionCard(
                             icon: "chart.bar.fill",
-                            title: "Stats"
+                            title: "Estadísticas"
                         )
                     }
 
                     NavigationLink(destination: SettingsView()) {
                         QuickActionCard(
                             icon: "gearshape.fill",
-                            title: "Settings"
+                            title: "Ajustes"
                         )
                     }
                 }
@@ -211,7 +211,7 @@ struct YTPlaylistsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your YouTube Playlists")
+            Text("Tus Listas de YouTube")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .foregroundColor(VibesColors.textPrimary)
@@ -239,7 +239,7 @@ struct YTPlaylistRow: View {
         VibesMediaRow(
             artworkUrl: playlist.thumbnailUrl,
             title: playlist.name,
-            subtitle: playlist.author ?? "Playlist"
+            subtitle: playlist.author ?? "Lista"
         )
     }
 }
@@ -255,17 +255,17 @@ struct SignInPrompt: View {
                 .font(.system(size: 60))
                 .foregroundColor(VibesColors.textTertiary)
 
-            Text("Sign in to YouTube Music")
+            Text("Inicia sesión en YouTube Music")
                 .font(.headline)
                 .foregroundColor(VibesColors.textPrimary)
 
-            Text("Access your playlists, liked songs, and listening history")
+            Text("Accede a tus listas, canciones favoritas e historial de reproducción")
                 .font(.subheadline)
                 .foregroundColor(VibesColors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
-            Button("Sign In") {
+            Button("Iniciar Sesión") {
                 showLogin = true
             }
             .buttonStyle(.borderedProminent)

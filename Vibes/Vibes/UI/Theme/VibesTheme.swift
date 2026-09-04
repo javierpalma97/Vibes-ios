@@ -249,10 +249,10 @@ struct VibesQuickTile: View {
 // MARK: - Library tabs
 
 enum VibesLibraryTab: String, CaseIterable {
-    case playlists = "Playlists"
-    case albums = "Albums"
-    case artists = "Artists"
-    case downloads = "Downloads"
+    case playlists = "Listas"
+    case albums = "Álbumes"
+    case artists = "Artistas"
+    case downloads = "Descargas"
 }
 
 struct VibesLibraryTabs: View {

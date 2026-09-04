@@ -2,6 +2,13 @@ import Foundation
 
 // MARK: - Common Models
 
+struct EmptyResponse: Decodable {
+    init(from decoder: Decoder) throws {
+        // Tolerates any JSON structure or empty body
+    }
+    init() {}
+}
+
 struct Thumbnail: Codable {
     let url: String
     let width: Int?

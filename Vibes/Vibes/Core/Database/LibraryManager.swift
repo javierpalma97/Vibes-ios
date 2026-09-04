@@ -18,6 +18,7 @@ class LibraryManager: ObservableObject {
     private init() {}
 
     func setModelContext(_ context: ModelContext) {
+        guard self.modelContext !== context else { return }
         self.modelContext = context
 
         // Load data asynchronously to avoid blocking UI on startup
@@ -515,6 +516,17 @@ class LibraryManager: ObservableObject {
         playlist.dateModified = Date()
 
         try? context.save()
+
+        // Sync online with YouTube Music if user is authenticated
+        if ytMusic.client.isAuthenticated && playlist.playlistType == .youtube {
+            do {
+                try await ytMusic.addSongToPlaylist(playlistId: playlist.id, videoId: song.id)
+                dlog("✅ [LibraryManager] Synced song \(song.title) to online playlist \(playlist.name)")
+            } catch {
+                dlog("⚠️ [LibraryManager] Failed online sync to playlist \(playlist.name): \(error)")
+            }
+        }
+
         await loadLocalData()
     }
 

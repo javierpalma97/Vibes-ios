@@ -15,7 +15,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     // Account
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Account")
+                        Text("Cuenta")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
@@ -25,7 +25,7 @@ struct SettingsView: View {
                                     .font(.largeTitle)
                                     .foregroundColor(VibesColors.accent)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(authManager.accountName ?? "Signed In")
+                                    Text(authManager.accountName ?? "YouTube Music Account")
                                         .font(.headline)
                                         .foregroundColor(VibesColors.textPrimary)
                                     if let email = authManager.accountEmail {
@@ -36,7 +36,7 @@ struct SettingsView: View {
                                 }
                                 Spacer()
                             }
-                            Button("Sign Out", role: .destructive) {
+                            Button("Cerrar sesión", role: .destructive) {
                                 authManager.signOut()
                             }
                         } else {
@@ -44,7 +44,7 @@ struct SettingsView: View {
                                 HStack {
                                     Image(systemName: "person.circle")
                                         .foregroundColor(VibesColors.accent)
-                                    Text("Sign in to YouTube Music")
+                                    Text("Iniciar sesión en YouTube Music")
                                         .foregroundColor(VibesColors.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -62,20 +62,20 @@ struct SettingsView: View {
 
                     // Playback
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Playback")
+                        Text("Reproducción")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
                         VStack(spacing: 0) {
                             HStack {
-                                Text("Audio Quality")
+                                Text("Calidad de audio")
                                     .foregroundColor(VibesColors.textPrimary)
                                 Spacer()
-                                Picker("Audio Quality", selection: $audioQuality) {
-                                    Text("Auto").tag("auto")
-                                    Text("Low").tag("low")
-                                    Text("Medium").tag("medium")
-                                    Text("High").tag("high")
+                                Picker("Calidad de audio", selection: $audioQuality) {
+                                    Text("Automática").tag("auto")
+                                    Text("Baja").tag("low")
+                                    Text("Media").tag("medium")
+                                    Text("Alta").tag("high")
                                 }
                                 .pickerStyle(.menu)
                                 .tint(VibesColors.accent)
@@ -83,10 +83,10 @@ struct SettingsView: View {
                             .padding(.vertical, 6)
                             Divider().background(VibesColors.elevated)
                             HStack {
-                                Text("Playback Speed")
+                                Text("Velocidad de reproducción")
                                     .foregroundColor(VibesColors.textPrimary)
                                 Spacer()
-                                Picker("Playback Speed", selection: $playbackSpeed) {
+                                Picker("Velocidad de reproducción", selection: $playbackSpeed) {
                                     Text("0.5x").tag(0.5)
                                     Text("0.75x").tag(0.75)
                                     Text("1.0x").tag(1.0)
@@ -102,9 +102,9 @@ struct SettingsView: View {
                                 playerManager.setPlaybackSpeed(newValue)
                             }
                             Divider().background(VibesColors.elevated)
-                            VibesToggleRow(title: "Skip Silence", isOn: $skipSilence)
+                            VibesToggleRow(title: "Omitir silencios", isOn: $skipSilence)
                             Divider().background(VibesColors.elevated)
-                            VibesToggleRow(title: "Normalize Audio", isOn: $normalizeAudio)
+                            VibesToggleRow(title: "Normalizar volumen", isOn: $normalizeAudio)
                         }
                         .padding(.horizontal, 12)
                         .background(VibesColors.card)
@@ -114,16 +114,16 @@ struct SettingsView: View {
 
                     // Storage
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Storage")
+                        Text("Almacenamiento")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
                         VStack(spacing: 0) {
-                            SettingsActionRow(title: "Clear Cache", action: clearCache)
+                            SettingsActionRow(title: "Borrar caché", action: clearCache)
                             Divider().background(VibesColors.elevated)
-                            SettingsActionRow(title: "Clear Search History", action: clearSearchHistory)
+                            SettingsActionRow(title: "Borrar historial de búsqueda", action: clearSearchHistory)
                             Divider().background(VibesColors.elevated)
-                            SettingsActionRow(title: "Delete All Data", destructive: true, action: deleteAllData)
+                            SettingsActionRow(title: "Eliminar todos los datos", destructive: true, action: deleteAllData)
                         }
                         .padding(.horizontal, 12)
                         .background(VibesColors.card)
@@ -133,7 +133,7 @@ struct SettingsView: View {
 
                     // Debug
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Debug")
+                        Text("Depuración")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
@@ -141,7 +141,7 @@ struct SettingsView: View {
                             HStack {
                                 Image(systemName: "doc.text.magnifyingglass")
                                     .foregroundColor(VibesColors.accent)
-                                Text("Playback logs")
+                                Text("Registros de reproducción")
                                     .foregroundColor(VibesColors.textPrimary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
@@ -159,23 +159,23 @@ struct SettingsView: View {
 
                     // About
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("About")
+                        Text("Acerca de")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
                         VStack(spacing: 0) {
                             HStack {
-                                Text("Version")
+                                Text("Versión")
                                     .foregroundColor(VibesColors.textPrimary)
                                 Spacer()
-                                Text("1.0.0")
+                                Text("2.0.0")
                                     .foregroundColor(VibesColors.textSecondary)
                             }
                             .padding(.vertical, 10)
                             Divider().background(VibesColors.elevated)
                             NavigationLink(destination: AboutView()) {
                                 HStack {
-                                    Text("About Vibes")
+                                    Text("Acerca de YtMusic")
                                         .foregroundColor(VibesColors.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -188,7 +188,7 @@ struct SettingsView: View {
                             Divider().background(VibesColors.elevated)
                             NavigationLink(destination: DisclaimerView()) {
                                 HStack {
-                                    Text("Disclaimer")
+                                    Text("Aviso Legal")
                                         .foregroundColor(VibesColors.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -201,7 +201,7 @@ struct SettingsView: View {
                             Divider().background(VibesColors.elevated)
                             NavigationLink(destination: PrivacyView()) {
                                 HStack {
-                                    Text("Privacy Policy")
+                                    Text("Política de Privacidad")
                                         .foregroundColor(VibesColors.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -223,7 +223,7 @@ struct SettingsView: View {
                 .padding(.top)
             }
             .vibesBackground()
-            .navigationTitle("Settings")
+            .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.large)
         }
     }
@@ -277,12 +277,12 @@ struct AboutView: View {
                     .foregroundColor(VibesColors.accent)
                     .padding(.top, 40)
 
-                Text("Vibes iOS")
+                Text("YtMusic iOS")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)
 
-                Text("A YouTube Music client for iOS")
+                Text("Cliente de reproductor de YouTube Music para iOS")
                     .font(.subheadline)
                     .foregroundColor(VibesColors.textSecondary)
 
@@ -290,15 +290,19 @@ struct AboutView: View {
                     .padding(.vertical)
 
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Credits")
+                    Text("Créditos y Agradecimientos")
                         .font(.headline)
                         .foregroundColor(VibesColors.textPrimary)
 
-                    Text("Vibes iOS is a port of the original Vibes Android app. It uses the InnerTube API to stream music from YouTube Music.")
+                    Text("Este proyecto fue creado y mejorado a partir del proyecto de código abierto dipens/Vibes-ios (https://github.com/dipens/Vibes-ios/) y utiliza la API de InnerTube para transmitir contenido de YouTube Music.")
                         .font(.body)
                         .foregroundColor(VibesColors.textSecondary)
 
-                    Text("This app is for personal use only and is not affiliated with Google or YouTube.")
+                    Link("Ver repositorio original dipens/Vibes-ios", destination: URL(string: "https://github.com/dipens/Vibes-ios/")!)
+                        .font(.subheadline)
+                        .foregroundColor(VibesColors.accent)
+
+                    Text("Esta aplicación es únicamente para uso personal y educativo sin fines comerciales.")
                         .font(.caption)
                         .foregroundColor(VibesColors.textSecondary)
                 }
@@ -308,7 +312,7 @@ struct AboutView: View {
             }
         }
         .vibesBackground()
-        .navigationTitle("About")
+        .navigationTitle("Acerca de YtMusic")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

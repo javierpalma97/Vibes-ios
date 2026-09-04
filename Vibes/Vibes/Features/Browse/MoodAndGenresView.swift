@@ -13,21 +13,27 @@ struct MoodAndGenresView: View {
     ]
 
     var body: some View {
-        ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Géneros y Estados de ánimo")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(VibesColors.textPrimary)
+                .padding(.horizontal)
+
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 100)
+                    .padding(.vertical, 40)
             } else if let error = errorMessage {
                 VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
 
                     Text(error)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(VibesColors.textSecondary)
 
-                    Button("Retry") {
+                    Button("Reintentar") {
                         Task {
                             await loadGenres()
                         }
@@ -35,7 +41,7 @@ struct MoodAndGenresView: View {
                     .buttonStyle(.bordered)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, 100)
+                .padding(.vertical, 40)
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(genres) { genre in
@@ -44,12 +50,9 @@ struct MoodAndGenresView: View {
                         }
                     }
                 }
-                .padding()
+                .padding(.horizontal)
             }
-
-            Spacer(minLength: 120)
         }
-        .navigationTitle("Mood & Genres")
         .task {
             await loadGenres()
         }

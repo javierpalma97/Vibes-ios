@@ -40,6 +40,10 @@ struct PlayerView: View {
                             .foregroundColor(VibesColors.textPrimary)
                     }
                     Spacer()
+                    Text("En reproducción")
+                        .font(.headline)
+                        .foregroundColor(VibesColors.textSecondary)
+                    Spacer()
                     Menu {
                         if let song = playerManager.currentSong {
                             PlayerMenuContent(song: song)
@@ -58,7 +62,7 @@ struct PlayerView: View {
                         // Artwork
                         VibesArtwork(
                             url: playerManager.currentSong?.thumbnailUrl,
-                            size: min(UIScreen.main.bounds.width - 120, 340),
+                            size: min(UIScreen.main.bounds.width - 100, 320),
                             radius: 20
                         )
                         .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
@@ -206,17 +210,17 @@ struct PlayerView: View {
                             AudioOutputInfo()
                         }
 
-                        // Bottom tabs: Up Next / Lyrics
+                        // Bottom tabs: A continuación / Letras
                         VStack(spacing: 0) {
                             HStack(spacing: 0) {
                                 PlayerBottomTabButton(
-                                    title: "Up Next",
+                                    title: "A continuación",
                                     icon: "list.bullet",
                                     selected: bottomTab == .upNext,
                                     action: { bottomTab = .upNext }
                                 )
                                 PlayerBottomTabButton(
-                                    title: "Lyrics",
+                                    title: "Letras",
                                     icon: "quote.bubble",
                                     selected: bottomTab == .lyrics,
                                     action: { bottomTab = .lyrics }
@@ -307,7 +311,7 @@ private struct UpNextInline: View {
         VStack(alignment: .leading, spacing: 4) {
             let upcoming = Array(queueManager.queue.dropFirst(max(queueManager.currentIndex + 1, 0)).prefix(5))
             if upcoming.isEmpty {
-                Text("Queue is empty")
+                Text("La cola está vacía")
                     .font(.subheadline)
                     .foregroundColor(VibesColors.textSecondary)
                     .padding(.horizontal, 24)
@@ -326,7 +330,7 @@ private struct UpNextInline: View {
                     .buttonStyle(.plain)
                 }
                 Button(action: onOpenQueue) {
-                    Text("Open full queue")
+                    Text("Abrir cola completa")
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(VibesColors.accent)

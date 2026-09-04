@@ -11,7 +11,7 @@ struct ExploreView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
                                 .foregroundColor(VibesColors.textSecondary)
-                            Text("Search songs, artists, playlists...")
+                            Text("Buscar canciones, artistas, playlists...")
                                 .foregroundColor(VibesColors.textSecondary)
                             Spacer()
                         }
@@ -24,20 +24,20 @@ struct ExploreView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
 
-                    VibesSectionHeader(title: "Browse", subtitle: "Charts, releases and more")
+                    VibesSectionHeader(title: "Explorar", subtitle: "Éxitos, novedades y más")
                         .padding(.horizontal)
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ExploreLinkCard(icon: "chart.line.uptrend.xyaxis", title: "Charts", subtitle: "Top music now") {
+                        ExploreLinkCard(icon: "chart.line.uptrend.xyaxis", title: "Éxitos", subtitle: "Lo más escuchado") {
                             ChartsView()
                         }
-                        ExploreLinkCard(icon: "sparkles", title: "New Releases", subtitle: "Fresh albums") {
+                        ExploreLinkCard(icon: "sparkles", title: "Novedades", subtitle: "Últimos lanzamientos") {
                             NewReleasesView()
                         }
-                        ExploreLinkCard(icon: "arrow.down.circle", title: "Downloads", subtitle: "Offline music") {
+                        ExploreLinkCard(icon: "arrow.down.circle", title: "Descargas", subtitle: "Música sin conexión") {
                             DownloadsView()
                         }
-                        ExploreLinkCard(icon: "clock", title: "History", subtitle: "Recently played") {
+                        ExploreLinkCard(icon: "clock", title: "Historial", subtitle: "Escuchado recientemente") {
                             HistoryView()
                         }
                     }
@@ -49,7 +49,7 @@ struct ExploreView: View {
                 }
             }
             .vibesBackground()
-            .navigationTitle("Explore")
+            .navigationTitle("Explorar")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(isPresented: $showSearch) {
                 SearchView()

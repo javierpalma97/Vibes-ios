@@ -2463,6 +2463,7 @@ class YouTubeMusic {
         let _: EmptyResponse = try await client.makeRequest(
             endpoint: "like/like",
             body: body,
+            clientType: .webRemix,
             responseType: EmptyResponse.self
         )
     }
@@ -2479,8 +2480,63 @@ class YouTubeMusic {
         let _: EmptyResponse = try await client.makeRequest(
             endpoint: "like/removelike",
             body: body,
+            clientType: .webRemix,
             responseType: EmptyResponse.self
         )
+    }
+
+    func addSongToPlaylist(playlistId: String, videoId: String) async throws {
+        guard client.isAuthenticated else {
+            throw InnerTubeError.notAuthenticated
+        }
+
+        let cleanPlaylistId = playlistId.replacingOccurrences(of: "VL", with: "")
+        let body: [String: Any] = [
+            "playlistId": cleanPlaylistId,
+            "actions": [
+                [
+                    "action": "ACTION_ADD_VIDEO",
+                    "addedVideoId": videoId
+                ]
+            ]
+        ]
+
+        let _: EmptyResponse = try await client.makeRequest(
+            endpoint: "browse/edit_playlist",
+            body: body,
+            clientType: .webRemix,
+            responseType: EmptyResponse.self
+        )
+    }
+
+    func createPlaylist(title: String, description: String? = nil, videoIds: [String] = []) async throws -> String? {
+        guard client.isAuthenticated else {
+            throw InnerTubeError.notAuthenticated
+        }
+
+        var body: [String: Any] = [
+            "title": title,
+            "privacyStatus": "PRIVATE"
+        ]
+        if let description = description {
+            body["description"] = description
+        }
+        if !videoIds.isEmpty {
+            body["videoIds"] = videoIds
+        }
+
+        struct CreatePlaylistResponse: Decodable {
+            let playlistId: String?
+        }
+
+        let response: CreatePlaylistResponse = try await client.makeRequest(
+            endpoint: "playlist/create",
+            body: body,
+            clientType: .webRemix,
+            responseType: CreatePlaylistResponse.self
+        )
+
+        return response.playlistId
     }
 
     // MARK: - Music History

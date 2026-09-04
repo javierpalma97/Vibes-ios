@@ -2,11 +2,11 @@ import SwiftUI
 import SwiftData
 
 enum VibesTab: String, CaseIterable {
-    case home = "Home"
-    case explore = "Explore"
-    case play = "Play"
-    case library = "Library"
-    case profile = "Profile"
+    case home = "Inicio"
+    case explore = "Explorar"
+    case play = "Reproducir"
+    case library = "Biblioteca"
+    case profile = "Perfil"
 
     var icon: String {
         switch self {
@@ -202,10 +202,14 @@ struct VibesMiniPlayer: View {
                         .font(.title3)
                         .foregroundColor(VibesColors.textPrimary)
                 }
-                Button(action: onQueueTap) {
-                    Image(systemName: "list.bullet")
-                        .font(.title3)
+                Button(action: {
+                    playerManager.stop()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.body)
+                        .fontWeight(.semibold)
                         .foregroundColor(VibesColors.textSecondary)
+                        .padding(6)
                 }
             }
             .padding(.horizontal, 12)

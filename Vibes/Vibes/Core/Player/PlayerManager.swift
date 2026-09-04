@@ -396,6 +396,17 @@ class PlayerManager: NSObject, ObservableObject {
         stopSilenceMonitoring()
     }
 
+    func stop() {
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        playerState = .stopped
+        currentSong = nil
+        currentTime = 0
+        duration = 0
+        stopSilenceMonitoring()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     func togglePlayPause() {
         if isPlaying {
             pause()

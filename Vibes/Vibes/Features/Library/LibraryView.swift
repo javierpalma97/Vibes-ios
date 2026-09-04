@@ -20,16 +20,11 @@ struct LibraryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Header
                     HStack {
-                        Text("Playlists")
+                        Text("Listas de reproducción")
                             .font(.largeTitle)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
                         Spacer()
-                        Button(action: { /* AirPlay / cast */ }) {
-                            Image(systemName: "airplayvideo")
-                                .font(.title2)
-                                .foregroundColor(VibesColors.textPrimary)
-                        }
                         Button(action: { showSettings = true }) {
                             Image(systemName: "gearshape")
                                 .font(.title2)
@@ -76,17 +71,17 @@ struct LibraryView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
-            .alert("Sync Error", isPresented: $showSyncError) {
+            .alert("Error de Sincronización", isPresented: $showSyncError) {
                 if syncError?.contains("expired") == true {
-                    Button("Sign In") {
+                    Button("Iniciar Sesión") {
                         showLogin = true
                     }
-                    Button("Cancel", role: .cancel) { }
+                    Button("Cancelar", role: .cancel) { }
                 } else {
-                    Button("OK", role: .cancel) { }
+                    Button("Aceptar", role: .cancel) { }
                 }
             } message: {
-                Text(syncError ?? "An error occurred")
+                Text(syncError ?? "Ha ocurrido un error")
             }
             .onChange(of: authManager.isAuthenticated) { _, newValue in
                 if newValue && !isSyncing {
@@ -127,9 +122,9 @@ struct LibraryView: View {
             if !authManager.isAuthenticated {
                 VibesEmptyState(
                     icon: "person.circle",
-                    title: "Sign in to see playlists",
-                    subtitle: "Sync your YouTube Music library",
-                    actionTitle: "Sign In",
+                    title: "Inicia sesión para ver tus listas",
+                    subtitle: "Sincroniza tu biblioteca de YouTube Music",
+                    actionTitle: "Iniciar Sesión",
                     action: { showLogin = true }
                 )
                 .padding(.horizontal)
@@ -145,7 +140,7 @@ struct LibraryView: View {
                                 .font(.title2)
                                 .foregroundColor(VibesColors.textPrimary)
                         }
-                        Text("Create New Playlist")
+                        Text("Crear nueva lista")
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundColor(VibesColors.textPrimary)
@@ -163,8 +158,8 @@ struct LibraryView: View {
                 NavigationLink(destination: LikedSongsPlaylistView()) {
                     VibesMediaRow(
                         artworkUrl: nil,
-                        title: "Liked Songs",
-                        subtitle: "\(libraryManager.likedSongs.count) songs",
+                        title: "Me gusta",
+                        subtitle: "\(libraryManager.likedSongs.count) canciones",
                         fallbackIcon: "heart.fill"
                     )
                     .padding(.horizontal, 12)
@@ -178,8 +173,8 @@ struct LibraryView: View {
                 NavigationLink(destination: TopSongsPlaylistView()) {
                     VibesMediaRow(
                         artworkUrl: nil,
-                        title: "Top Songs",
-                        subtitle: "Most played tracks",
+                        title: "Más escuchadas",
+                        subtitle: "Canciones más reproducidas",
                         fallbackIcon: "chart.bar.fill"
                     )
                     .padding(.horizontal, 12)
@@ -196,7 +191,7 @@ struct LibraryView: View {
                         VibesMediaRow(
                             artworkUrl: playlist.thumbnailUrl,
                             title: playlist.name,
-                            subtitle: "\(playlist.songCount) songs",
+                            subtitle: "\(playlist.songCount) canciones",
                             onMenu: {}
                         )
                         .padding(.horizontal, 12)
@@ -212,7 +207,7 @@ struct LibraryView: View {
                 Button(action: { syncLibrary() }) {
                     HStack {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(isSyncing ? "Syncing..." : "Sync Library")
+                        Text(isSyncing ? "Sincronizando..." : "Sincronizar biblioteca")
                         if isSyncing {
                             Spacer()
                             ProgressView()
@@ -249,26 +244,24 @@ struct LibraryView: View {
             } catch InnerTubeError.authenticationExpired {
                 await MainActor.run {
                     DebugLogger.shared.log("❌ sync authExpired \(InnerTubeClient.shared.debugAuthState)")
-                    syncError = "Sync authExpired – no se cierra sesión. Revisa DebugLog. \(InnerTubeClient.shared.debugAuthState)"
+                    syncError = "Sesión expirada. Revisa DebugLog. \(InnerTubeClient.shared.debugAuthState)"
                     showSyncError = true
                 }
-                dlog("❌ [LibraryView] sync authExpired \(InnerTubeClient.shared.debugAuthState)")
             } catch InnerTubeError.notAuthenticated {
                 await MainActor.run {
-                    syncError = "Please sign in to sync your library."
+                    syncError = "Por favor inicia sesión para sincronizar."
                     showLogin = true
                 }
             } catch InnerTubeError.invalidResponse {
                 await MainActor.run {
-                    syncError = "YouTube Music not set up. Please visit music.youtube.com in Safari, sign in, and like a song or create a playlist to initialize your library."
+                    syncError = "YouTube Music no inicializado. Entra en music.youtube.com y da me gusta a una canción."
                     showSyncError = true
                 }
             } catch {
                 await MainActor.run {
-                    syncError = "Sync failed: \(error.localizedDescription)"
+                    syncError = "Error al sincronizar: \(error.localizedDescription)"
                     showSyncError = true
                 }
-                dlog("Sync failed: \(error)")
             }
             isSyncing = false
         }
@@ -278,9 +271,9 @@ struct LibraryView: View {
 // MARK: - Sort options
 
 enum PlaylistSort: String, CaseIterable {
-    case recentlyAdded = "Recently added"
-    case name = "Name"
-    case mostTracks = "Most tracks"
+    case recentlyAdded = "Añadidas recientemente"
+    case name = "Nombre"
+    case mostTracks = "Más canciones"
 }
 
 // MARK: - Song row (shared, pure row: callers wrap tap behavior)

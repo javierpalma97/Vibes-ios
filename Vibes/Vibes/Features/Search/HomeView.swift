@@ -26,7 +26,7 @@ struct HomeView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
                                 .foregroundColor(VibesColors.textSecondary)
-                            Text("Search songs, artists, playlists...")
+                            Text("Buscar canciones, artistas, playlists...")
                                 .foregroundColor(VibesColors.textSecondary)
                             Spacer()
                         }
@@ -43,8 +43,8 @@ struct HomeView: View {
                     if selectedChip == nil && !libraryManager.quickPicks.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             VibesSectionHeader(
-                                title: "For You",
-                                subtitle: "Personalized playlists and new releases",
+                                title: "Para ti",
+                                subtitle: "Listas personalizadas y novedades",
                                 actionTitle: "",
                                 action: nil
                             )
@@ -57,13 +57,13 @@ struct HomeView: View {
                     if selectedChip == nil {
                         HStack(spacing: 12) {
                             NavigationLink(destination: LikedSongsPlaylistView()) {
-                                VibesQuickTileContent(icon: "heart", title: "My Favorites")
+                                VibesQuickTileContent(icon: "heart", title: "Mis Favoritos")
                             }
                             NavigationLink(destination: HistoryView()) {
-                                VibesQuickTileContent(icon: "clock.arrow.circlepath", title: "Recently Played")
+                                VibesQuickTileContent(icon: "clock.arrow.circlepath", title: "Recientes")
                             }
                             NavigationLink(destination: NewReleasesView()) {
-                                VibesQuickTileContent(icon: "sparkles", title: "New Releases")
+                                VibesQuickTileContent(icon: "sparkles", title: "Novedades")
                             }
                         }
                         .buttonStyle(.plain)
@@ -74,13 +74,13 @@ struct HomeView: View {
                     if selectedChip == nil && !libraryManager.recentlyPlayed.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Text("Recently Played")
+                                Text("Escuchado recientemente")
                                     .font(.title2)
                                     .fontWeight(.bold)
                                     .foregroundColor(VibesColors.textPrimary)
                                 Spacer()
                                 NavigationLink(destination: HistoryView()) {
-                                    Text("See all")
+                                    Text("Ver todo")
                                         .font(.subheadline)
                                         .foregroundColor(VibesColors.accent)
                                 }
