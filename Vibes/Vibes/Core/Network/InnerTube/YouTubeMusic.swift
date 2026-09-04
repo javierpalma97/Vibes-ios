@@ -2346,9 +2346,18 @@ class YouTubeMusic {
         // Tu log: browseAuth FEmusic_liked_playlists OK via tv pero parsed 0.
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_playlists")
-            let rawLists = rawPlaylists(raw)
-            await MainActor.run { DebugLogger.shared.log("📚 raw parsed \(rawLists.count) playlists names=\(rawLists.prefix(6).map { $0.name })") }
-            if !rawLists.isEmpty { return rawLists }
+            var merged = rawPlaylists(raw)
+            // Tiles de la tab Playlists (ids VL/PL con título propio): fusionar sin duplicar
+            let tiles = await rawTvTabTiles(raw, tabIds: ["FEmusic_liked_playlists"], titleHints: ["playlist"])
+            for t in tiles {
+                guard let bid = t.browseId, (bid.hasPrefix("VL") || bid.hasPrefix("PL")) else { continue }
+                let pid = bid.hasPrefix("VL") ? String(bid.dropFirst(2)) : bid
+                if !merged.contains(where: { $0.id == pid }) {
+                    merged.append(YTPlaylist(id: pid, name: t.title, author: t.subtitle.isEmpty ? nil : t.subtitle, thumbnailUrl: t.thumb, songCount: 0, playlistId: nil))
+                }
+            }
+            await MainActor.run { DebugLogger.shared.log("📚 raw parsed \(merged.count) playlists names=\(merged.prefix(8).map { $0.name })") }
+            if !merged.isEmpty { return merged }
         } catch {
             await MainActor.run { DebugLogger.shared.log("❌ raw FEmusic_liked_playlists \(error)") }
         }
@@ -2362,8 +2371,20 @@ class YouTubeMusic {
 
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_albums")
-            let albums = rawAlbums(raw)
-            await MainActor.run { DebugLogger.shared.log("📀 getLibraryAlbums rawAlbums=\(albums.count) names=\(albums.prefix(6).map { $0.title })") }
+            var albums = rawAlbums(raw)
+            // Tiles de la tab Albums (MPRE o sin endpoint): la forma real de la librería TV
+            let tiles = await rawTvTabTiles(raw, tabIds: ["FEmusic_liked_albums"], titleHints: ["album"])
+            for t in tiles {
+                if let bid = t.browseId, bid.hasPrefix("MPRE"), !albums.contains(where: { $0.id == bid }) {
+                    albums.append(YTAlbum(id: bid, title: t.title, artists: t.subtitle, year: nil, thumbnailUrl: t.thumb))
+                } else if t.browseId == nil && t.watchVideoId == nil {
+                    let aid = t.contentId ?? t.title
+                    if !aid.isEmpty && !albums.contains(where: { $0.id == aid }) {
+                        albums.append(YTAlbum(id: aid, title: t.title, artists: t.subtitle, year: nil, thumbnailUrl: t.thumb))
+                    }
+                }
+            }
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryAlbums rawAlbums=\(albums.count) names=\(albums.prefix(8).map { $0.title })") }
             return albums
         } catch {
             return []
@@ -2377,8 +2398,20 @@ class YouTubeMusic {
 
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_library_corpus_artists")
-            let artists = rawArtists(raw)
-            await MainActor.run { DebugLogger.shared.log("📀 getLibraryArtists rawArtists=\(artists.count) names=\(artists.prefix(6).map { $0.name })") }
+            var artists = rawArtists(raw)
+            // Tiles de la tab Artists/Subscriptions (UC o sin endpoint)
+            let tiles = await rawTvTabTiles(raw, tabIds: ["FEmusic_library_corpus_artists"], titleHints: ["artist", "subscription"])
+            for t in tiles {
+                if let bid = t.browseId, bid.hasPrefix("UC"), !artists.contains(where: { $0.id == bid }) {
+                    artists.append(YTArtist(id: bid, name: t.title, thumbnailUrl: t.thumb))
+                } else if t.browseId == nil && t.watchVideoId == nil {
+                    let aid = t.contentId ?? t.title
+                    if !aid.isEmpty && !artists.contains(where: { $0.id == aid }) {
+                        artists.append(YTArtist(id: aid, name: t.title, thumbnailUrl: t.thumb))
+                    }
+                }
+            }
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryArtists rawArtists=\(artists.count) names=\(artists.prefix(8).map { $0.name })") }
             return artists
         } catch {
             return []
@@ -2594,6 +2627,133 @@ class YouTubeMusic {
             out.append(YTArtist(id: bid, name: name, thumbnailUrl: thumb))
         }
         return out
+    }
+
+    // MARK: - TV secondary-nav tabs + tiles (librería TV: Your Music Library)
+
+    private struct RawTvTab {
+        let browseId: String
+        let title: String
+        let content: [String: Any]?
+    }
+
+    /// Tabs de tvSecondaryNavRenderer: cada tab trae endpoint.browseId + contenido INLINE
+    /// (gridRenderer con tileRenderer). Pedir FEmusic_liked_albums devuelve el shell con
+    /// TODAS las tabs; el contenido real está en la tab correspondiente.
+    private func rawTvTabs(_ root: [String: Any]) -> [RawTvTab] {
+        var out: [RawTvTab] = []
+        var seen = Set<String>()
+        walk(root) { d in
+            guard let tab = d["tabRenderer"] as? [String: Any],
+                  let ep = tab["endpoint"] as? [String: Any],
+                  let be = ep["browseEndpoint"] as? [String: Any],
+                  let bid = be["browseId"] as? String,
+                  !seen.contains(bid) else { return }
+            seen.insert(bid)
+            let title = rawTexts(tab["title"]).joined()
+            out.append(RawTvTab(browseId: bid, title: title, content: tab["content"] as? [String: Any]))
+        }
+        return out
+    }
+
+    private struct RawTile {
+        let contentId: String?
+        let title: String
+        let subtitle: String
+        let thumb: String?
+        let watchVideoId: String?
+        let browseId: String?
+    }
+
+    /// tileRenderer genérico TV: contentId + título (metadata) + endpoints onSelect.
+    private func rawTiles(_ node: Any) -> [RawTile] {
+        var out: [RawTile] = []
+        var seen = Set<String>()
+        walk(node) { d in
+            guard let tile = d["tileRenderer"] as? [String: Any] else { return }
+            let cid = tile["contentId"] as? String
+            // Título: metadata.tileMetadataRenderer.title, metadata.title o title directo
+            var title = ""
+            var subtitle = ""
+            if let meta = tile["metadata"] as? [String: Any] {
+                if let tmr = meta["tileMetadataRenderer"] as? [String: Any] {
+                    title = rawTexts(tmr["title"]).joined()
+                    if subtitle.isEmpty { subtitle = rawTexts(tmr["subtitle"]).joined(separator: " ") }
+                    if subtitle.isEmpty { subtitle = rawTexts(tmr["lines"]).joined(separator: " ") }
+                }
+                if title.isEmpty { title = rawTexts(meta["title"]).joined() }
+            }
+            if title.isEmpty { title = rawTexts(tile["title"]).joined() }
+            // Endpoints: onSelectCommand / navigationEndpoint / overlay (cualquier clave *Endpoint)
+            var wvid: String?
+            var bbid: String?
+            let candidates: [Any?] = [tile["onSelectCommand"], tile["navigationEndpoint"], tile["overlay"]]
+            for cand in candidates {
+                guard let ed = cand as? [String: Any] else { continue }
+                if wvid == nil, let we = ed["watchEndpoint"] as? [String: Any], let v = we["videoId"] as? String { wvid = v }
+                if bbid == nil, let be = ed["browseEndpoint"] as? [String: Any], let b = be["browseId"] as? String { bbid = b }
+            }
+            if wvid == nil || bbid == nil {
+                for (k, val) in tile where k.hasSuffix("Endpoint") || k.hasSuffix("Command") {
+                    guard let ed = val as? [String: Any] else { continue }
+                    if wvid == nil, let we = ed["watchEndpoint"] as? [String: Any], let v = we["videoId"] as? String { wvid = v }
+                    if bbid == nil {
+                        if let be = ed["browseEndpoint"] as? [String: Any], let b = be["browseId"] as? String { bbid = b }
+                        else if let nav = ed["navigationEndpoint"] as? [String: Any],
+                                let be2 = nav["browseEndpoint"] as? [String: Any], let b2 = be2["browseId"] as? String { bbid = b2 }
+                    }
+                }
+            }
+            guard !title.isEmpty else { return }
+            let key = "\(cid ?? "-")|\(wvid ?? "-")|\(bbid ?? "-")|\(title)"
+            guard !seen.contains(key) else { return }
+            seen.insert(key)
+            var thumb: String?
+            if let header = tile["header"] as? [String: Any],
+               let thr = header["tileHeaderRenderer"] as? [String: Any] {
+                thumb = rawThumb(thr["thumbnail"]) ?? rawThumb(thr)
+            }
+            if thumb == nil { thumb = rawThumb(tile["thumbnail"]) }
+            out.append(RawTile(contentId: cid, title: title, subtitle: subtitle, thumb: thumb, watchVideoId: wvid, browseId: bbid))
+        }
+        return out
+    }
+
+    /// Tiles de la tab indicada (por browseId o pista de título). Si la tab trae solo
+    /// continuación (reloadContinuationData), la sigue (browse+continuation) y parsea el resultado.
+    private func rawTvTabTiles(_ root: [String: Any], tabIds: [String], titleHints: [String]) async -> [RawTile] {
+        let tabs = rawTvTabs(root)
+        var content: [String: Any]?
+        for tid in tabIds {
+            if let t = tabs.first(where: { $0.browseId == tid }), let c = t.content { content = c; break }
+        }
+        if content == nil {
+            for hint in titleHints {
+                if let t = tabs.first(where: { $0.title.lowercased().contains(hint) }), let c = t.content { content = c; break }
+            }
+        }
+        guard let c = content else { return [] }
+        var tiles = rawTiles(c)
+        if !tiles.isEmpty { return tiles }
+        // Sin grid inline: seguir reloadContinuationData (tabs no seleccionadas)
+        var contToken: String?
+        walk(c) { d in
+            if contToken != nil { return }
+            if let rc = d["reloadContinuationData"] as? [String: Any],
+               let tok = rc["continuation"] as? String { contToken = tok }
+        }
+        guard let tok = contToken else { return [] }
+        do {
+            let dict: [String: Any] = try await client.makeRawRequest(
+                endpoint: "browse", body: ["continuation": tok],
+                clientType: .tv, forceNoAuth: false
+            )
+            await MainActor.run { DebugLogger.shared.log("📑 tab continuation seguida items?") }
+            tiles = rawTiles(dict)
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ tab continuation \(error)") }
+        }
+        return tiles
     }
 
     /// musicTwoRowItemRenderer genérico → HomeItem (playlist VL/PL, álbum MPRE, artista UC).
