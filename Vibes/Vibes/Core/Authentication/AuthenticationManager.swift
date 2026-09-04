@@ -40,6 +40,7 @@ class AuthenticationManager: ObservableObject {
             accountEmail = UserDefaults.standard.string(forKey: "accountEmail")
             accountImageUrl = UserDefaults.standard.string(forKey: "accountImageUrl")
             Task {
+                await OAuthManager.shared.refreshIfNeeded()
                 await fetchGoogleUserInfo()
             }
         } else {

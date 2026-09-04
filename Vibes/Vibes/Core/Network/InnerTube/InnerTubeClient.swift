@@ -168,6 +168,7 @@ class InnerTubeClient {
     /// acepta un mecanismo distinto (TV=Bearer, WEB_REMIX=SAPISIDHASH), por eso
     /// browseAuthenticated ordena los intentos según este modo.
     var hasBearer: Bool { OAuthManager.bearerHeaderSync != nil }
+    var hasCookies: Bool { cookies != nil && !(cookies?.isEmpty ?? true) }
     var hasCookieAuth: Bool {
         guard cookies != nil && !(cookies?.isEmpty ?? true) else { return false }
         return cookieMap["SAPISID"] != nil || cookieMap["__Secure-3PAPISID"] != nil

@@ -1682,7 +1682,9 @@ class YouTubeMusic {
 
     func getExplore() async throws -> ExplorePage {
         let response = try await browse(browseId: "FEmusic_explore")
-        return parseExplorePage(response)
+        let page = parseExplorePage(response)
+        await MainActor.run { DebugLogger.shared.log("🎨 [Explore] Parsed \(page.moodAndGenres.count) mood & genres, \(page.newReleaseAlbums.count) new releases") }
+        return page
     }
 
     private func parseExplorePage(_ response: BrowseResponse) -> ExplorePage {
@@ -1739,7 +1741,35 @@ class YouTubeMusic {
 
     func getMoodAndGenres() async throws -> [MoodAndGenre] {
         let response = try await browse(browseId: "FEmusic_moods_and_genres")
-        return parseMoodAndGenres(response)
+        let genres = parseMoodAndGenres(response)
+        await MainActor.run { DebugLogger.shared.log("🎭 [Genres] Parsed \(genres.count) genres from structured response") }
+        if !genres.isEmpty { return genres }
+
+        // Raw fallback: TV client may return different structure
+        do {
+            let raw = try await browseRawPublic(browseId: "FEmusic_moods_and_genres")
+            var rawGenres: [MoodAndGenre] = []
+            walk(raw) { d in
+                if let navBtn = d["musicNavigationButtonRenderer"] as? [String: Any] {
+                    let title = rawTexts(navBtn["buttonText"]).joined()
+                    var browseId: String?
+                    var params: String?
+                    if let cmd = navBtn["clickCommand"] as? [String: Any],
+                       let be = cmd["browseEndpoint"] as? [String: Any] {
+                        browseId = be["browseId"] as? String
+                        params = be["params"] as? String
+                    }
+                    if !title.isEmpty && !rawGenres.contains(where: { $0.title == title }) {
+                        rawGenres.append(MoodAndGenre(id: browseId ?? UUID().uuidString, title: title, params: params, color: nil))
+                    }
+                }
+            }
+            await MainActor.run { DebugLogger.shared.log("🎭 [Genres] Raw fallback: \(rawGenres.count) genres") }
+            if !rawGenres.isEmpty { return rawGenres }
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ [Genres] Raw fallback failed: \(error)") }
+        }
+        return genres
     }
 
     private func parseMoodAndGenres(_ response: BrowseResponse) -> [MoodAndGenre] {
@@ -2504,7 +2534,7 @@ class YouTubeMusic {
         // With Bearer (OAuth): webCreator first, then webRemix as last resort.
         // With cookies: webRemix first (SAPISIDHASH), then webCreator.
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.cookies != nil
+        let hasCookies = client.hasCookies
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2540,7 +2570,7 @@ class YouTubeMusic {
         ]
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.cookies != nil
+        let hasCookies = client.hasCookies
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2583,7 +2613,7 @@ class YouTubeMusic {
         ]
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.cookies != nil
+        let hasCookies = client.hasCookies
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2630,7 +2660,7 @@ class YouTubeMusic {
         }
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.cookies != nil
+        let hasCookies = client.hasCookies
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
