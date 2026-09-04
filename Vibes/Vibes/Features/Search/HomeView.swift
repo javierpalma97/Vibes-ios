@@ -132,9 +132,9 @@ struct HomeView: View {
                     )
                 }
             }
-            print("🏠 [Home] Loaded \(page.sections.count) sections")
+            dlog("🏠 [Home] Loaded \(page.sections.count) sections")
         } catch {
-            print("❌ [Home] Error loading home feed: \(error)")
+            dlog("❌ [Home] Error loading home feed: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load home feed"
             }
@@ -151,9 +151,9 @@ struct HomeView: View {
             await MainActor.run {
                 explorePage = page
             }
-            print("🎨 [Explore] Loaded \(page.moodAndGenres.count) mood & genres")
+            dlog("🎨 [Explore] Loaded \(page.moodAndGenres.count) mood & genres")
         } catch {
-            print("❌ [Explore] Error loading explore: \(error)")
+            dlog("❌ [Explore] Error loading explore: \(error)")
         }
     }
 
@@ -175,9 +175,9 @@ struct HomeView: View {
                     continuation: page.continuation
                 )
             }
-            print("🏠 [Home] Loaded \(page.sections.count) more sections")
+            dlog("🏠 [Home] Loaded \(page.sections.count) more sections")
         } catch {
-            print("❌ [Home] Error loading more content: \(error)")
+            dlog("❌ [Home] Error loading more content: \(error)")
         }
 
         await MainActor.run {

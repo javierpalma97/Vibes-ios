@@ -97,7 +97,7 @@ struct HistoryView: View {
                 errorMessage = "Sign in to YouTube Music to see your listening history"
             }
         } catch {
-            print("❌ [History] Error loading history: \(error)")
+            dlog("❌ [History] Error loading history: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load history"
             }

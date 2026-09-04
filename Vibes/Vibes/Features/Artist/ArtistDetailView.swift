@@ -67,7 +67,7 @@ struct ArtistDetailView: View {
                 artistPage = page
             }
         } catch {
-            print("❌ [Artist] Error loading artist: \(error)")
+            dlog("❌ [Artist] Error loading artist: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load artist"
             }

@@ -69,7 +69,7 @@ struct AccountView: View {
                 ytPlaylists = playlists
             }
         } catch {
-            print("❌ [Account] Error loading playlists: \(error)")
+            dlog("❌ [Account] Error loading playlists: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load playlists"
             }

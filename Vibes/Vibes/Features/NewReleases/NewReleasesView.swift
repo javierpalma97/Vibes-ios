@@ -65,7 +65,7 @@ struct NewReleasesView: View {
                 albums = fetchedAlbums
             }
         } catch {
-            print("❌ [NewReleases] Error loading new releases: \(error)")
+            dlog("❌ [NewReleases] Error loading new releases: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load new releases"
             }

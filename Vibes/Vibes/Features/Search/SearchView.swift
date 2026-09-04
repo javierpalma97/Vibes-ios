@@ -88,7 +88,7 @@ struct SearchView: View {
                 searchResults = try await ytMusic.search(query: searchQuery, filter: selectedFilter)
                 libraryManager.addSearchHistory(query: searchQuery)
             } catch {
-                print("Search failed: \(error)")
+                dlog("Search failed: \(error)")
             }
             isSearching = false
         }
@@ -99,19 +99,19 @@ struct SearchView: View {
             switch result {
             case .song(let song):
                 // Play song
-                print("🎵 [Search] Tapped song: \(song.title) (id: \(song.id))")
+                dlog("🎵 [Search] Tapped song: \(song.title) (id: \(song.id))")
                 if let dbSong = await libraryManager.getSong(id: song.id) {
-                    print("🎵 [Search] Found existing song in DB, playing...")
+                    dlog("🎵 [Search] Found existing song in DB, playing...")
                     await queueManager.setQueue([dbSong])
                 } else {
                     // Save song to database first
-                    print("🎵 [Search] Song not in DB, saving first...")
+                    dlog("🎵 [Search] Song not in DB, saving first...")
                     await libraryManager.saveSong(song)
                     if let dbSong = await libraryManager.getSong(id: song.id) {
-                        print("🎵 [Search] Saved and retrieved song, playing...")
+                        dlog("🎵 [Search] Saved and retrieved song, playing...")
                         await queueManager.setQueue([dbSong])
                     } else {
-                        print("❌ [Search] Failed to retrieve song after saving!")
+                        dlog("❌ [Search] Failed to retrieve song after saving!")
                     }
                 }
 
@@ -125,7 +125,7 @@ struct SearchView: View {
                     let dbSongs = await loadSongs(ids: songs.map { $0.id })
                     await queueManager.setQueue(dbSongs)
                 } catch {
-                    print("Failed to load album: \(error)")
+                    dlog("Failed to load album: \(error)")
                 }
 
             case .playlist(let playlist):
@@ -138,7 +138,7 @@ struct SearchView: View {
                     let dbSongs = await loadSongs(ids: songs.map { $0.id })
                     await queueManager.setQueue(dbSongs)
                 } catch {
-                    print("Failed to load playlist: \(error)")
+                    dlog("Failed to load playlist: \(error)")
                 }
 
             case .artist:

@@ -87,7 +87,7 @@ class OAuthManager: ObservableObject {
             expiresAt = Date(timeIntervalSince1970: t)
         }
         isAuthenticated = accessToken != nil && !(accessToken?.isEmpty ?? true)
-        if isAuthenticated { print("🔐 [OAuth] cargado token desde keychain") }
+        if isAuthenticated { dlog("🔐 [OAuth] cargado token desde keychain") }
     }
 
     private func save(access: String?, refresh: String?, expiresIn: Int?) {
@@ -96,7 +96,7 @@ class OAuthManager: ObservableObject {
         if let e = expiresIn { let d = Date().addingTimeInterval(TimeInterval(e)); UserDefaults.standard.set(d.timeIntervalSince1970, forKey: kExpiry); expiresAt = d }
         isAuthenticated = accessToken != nil && !(accessToken?.isEmpty ?? true)
         DebugLogger.shared.log("🔐 OAuth save isAuth=\(isAuthenticated) access=\(access?.prefix(20) ?? "nil")...")
-        print("🔐 [OAuth] save isAuth=\(isAuthenticated)")
+        dlog("🔐 [OAuth] save isAuth=\(isAuthenticated)")
         NotificationCenter.default.post(name: NSNotification.Name("OAuthAuthChanged"), object: nil)
         Task { @MainActor in AuthenticationManager.shared.refreshAuthState() }
     }

@@ -63,7 +63,7 @@ struct ChartsView: View {
                 chartsPage = page
             }
         } catch {
-            print("❌ [Charts] Error loading charts: \(error)")
+            dlog("❌ [Charts] Error loading charts: \(error)")
             await MainActor.run {
                 DebugLogger.shared.log("❌ charts vista err=\(error)")
                 errorMessage = "Failed to load charts"

@@ -1,0 +1,16 @@
+# Proyecto original de referencia (solo consulta local, no versionar)
+Vibes-ios-main_old/
+
+# Logs de mitmproxy (pueden contener secretos)
+ytm_flows.log
+*.mitm
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS / Xcode
+.DS_Store
+build/
+DerivedData/
+*.xcuserdata/

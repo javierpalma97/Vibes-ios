@@ -65,7 +65,7 @@ struct MoodAndGenresView: View {
                 genres = fetchedGenres
             }
         } catch {
-            print("❌ [Genres] Error loading mood & genres: \(error)")
+            dlog("❌ [Genres] Error loading mood & genres: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load mood & genres"
             }

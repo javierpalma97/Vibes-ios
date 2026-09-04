@@ -116,7 +116,7 @@ class DownloadManager: NSObject, ObservableObject {
             try await performChunkedDownload(songId: song.id, url: url, contentLength: contentLength, clientType: clientType)
 
         } catch {
-            print("❌ [Download] Failed for \(song.id): \(error)")
+            dlog("❌ [Download] Failed for \(song.id): \(error)")
             activeDownloads[song.id] = .failed(error: error.localizedDescription)
         }
     }
@@ -166,7 +166,7 @@ class DownloadManager: NSObject, ObservableObject {
             totalWritten += Int64(probeData.count)
             offset = Int64(probeData.count)
             await MainActor.run { self.activeDownloads[songId] = .downloading(progress: totalLength > 0 ? Double(totalWritten)/Double(totalLength) : 0.5) }
-            print("📥 [Download] Probe \(songId): \(probeData.count) bytes, total \(totalLength)")
+            dlog("📥 [Download] Probe \(songId): \(probeData.count) bytes, total \(totalLength)")
         }
 
         // If we still don't know totalLength, try to use contentLength from probe or fallback to streaming
@@ -193,9 +193,9 @@ class DownloadManager: NSObject, ObservableObject {
                     segmentStart = totalWritten
                     rn = 0
                     urlRefreshes += 1
-                    print("🔄 [Download] URL fresca proactiva (\(urlRefreshes)) en offset \(offset)")
+                    dlog("🔄 [Download] URL fresca proactiva (\(urlRefreshes)) en offset \(offset)")
                 } catch {
-                    print("⚠️ [Download] no se pudo refrescar URL, sigo con la actual: \(error)")
+                    dlog("⚠️ [Download] no se pudo refrescar URL, sigo con la actual: \(error)")
                 }
             }
 
@@ -207,7 +207,7 @@ class DownloadManager: NSObject, ObservableObject {
             } catch DownloadError.forbidden where urlRefreshes < maxRefreshes {
                 // Cuota de la URL agotada (~1MB): pedir URL fresca y reanudar mismo offset
                 urlRefreshes += 1
-                print("⚠️ [Download] 403 en offset \(offset), pidiendo URL fresca (\(urlRefreshes)/\(maxRefreshes))...")
+                dlog("⚠️ [Download] 403 en offset \(offset), pidiendo URL fresca (\(urlRefreshes)/\(maxRefreshes))...")
                 let (freshUrl, _, freshClient) = try await ytMusic.getStreamUrlForDownload(videoId: songId)
                 guard let fresh = URL(string: freshUrl) else { throw DownloadError.invalidURL }
                 currentURL = fresh
@@ -226,7 +226,7 @@ class DownloadManager: NSObject, ObservableObject {
 
             let progress = totalLength > 0 ? Double(totalWritten)/Double(totalLength) : 0.5
             await MainActor.run { self.activeDownloads[songId] = .downloading(progress: progress) }
-            print("📥 [Download] \(songId) chunk \(offset)-\(end) \(chunkData.count) bytes progress \(Int(progress*100))%")
+            dlog("📥 [Download] \(songId) chunk \(offset)-\(end) \(chunkData.count) bytes progress \(Int(progress*100))%")
 
             // If server returned less than requested, we're at EOF
             if Int64(chunkData.count) < (end - offset + Int64(chunkData.count) + 1) && chunkData.count < chunkSize {
@@ -244,7 +244,7 @@ class DownloadManager: NSObject, ObservableObject {
         // Validate final file size
         let attrs = try? FileManager.default.attributesOfItem(atPath: destinationURL.path)
         let finalSize = attrs?[.size] as? UInt64 ?? 0
-        print("✅ [Download] Completed \(songId) final size \(finalSize) bytes (expected \(totalLength))")
+        dlog("✅ [Download] Completed \(songId) final size \(finalSize) bytes (expected \(totalLength))")
         if finalSize < 1024 {
             // File too small – likely failed (HTML error page or empty)
             try? FileManager.default.removeItem(at: destinationURL)
@@ -285,9 +285,9 @@ class DownloadManager: NSObject, ObservableObject {
 
         // Accept 206 Partial Content or 200 OK (for small query range fallback)
         guard (200...299).contains(http.statusCode) || http.statusCode == 206 else {
-            print("❌ [Download] Chunk \(start)-\(end) HTTP \(http.statusCode)")
+            dlog("❌ [Download] Chunk \(start)-\(end) HTTP \(http.statusCode)")
             if let body = String(data: data, encoding: .utf8) {
-                print("  body preview: \(body.prefix(500))")
+                dlog("  body preview: \(body.prefix(500))")
             }
             if http.statusCode == 403 { throw DownloadError.forbidden }
             throw DownloadError.downloadFailed
@@ -345,7 +345,7 @@ class DownloadManager: NSObject, ObservableObject {
                        let size = attrs[.size] as? UInt64, size < 1024 {
                         // Remove empty/corrupt download (matches ZERO KB bug)
                         try? FileManager.default.removeItem(atPath: filePath)
-                        print("🗑️ [Download] Removed empty file \(file) (\(size) bytes)")
+                        dlog("🗑️ [Download] Removed empty file \(file) (\(size) bytes)")
                         continue
                     }
                     let songId = String(file.dropLast(4))
@@ -354,7 +354,7 @@ class DownloadManager: NSObject, ObservableObject {
             }
         }
         // Log current state
-        print("📥 [Download] Loaded \(activeDownloads.filter { $0.value == .downloaded }.count) downloaded, total size \(formattedDownloadSize)")
+        dlog("📥 [Download] Loaded \(activeDownloads.filter { $0.value == .downloaded }.count) downloaded, total size \(formattedDownloadSize)")
     }
 
     func saveDownloadStates() {

@@ -76,15 +76,15 @@ struct AlbumDetailView: View {
         errorMessage = nil
 
         do {
-            print("🎵 [Album] Loading album: \(album.id)")
+            dlog("🎵 [Album] Loading album: \(album.id)")
             let (fetchedAlbum, fetchedSongs) = try await ytMusic.getAlbum(browseId: album.id)
-            print("🎵 [Album] Loaded \(fetchedSongs.count) songs")
+            dlog("🎵 [Album] Loaded \(fetchedSongs.count) songs")
             await MainActor.run {
                 albumDetails = fetchedAlbum
                 songs = fetchedSongs
             }
         } catch {
-            print("❌ [Album] Error loading album: \(error)")
+            dlog("❌ [Album] Error loading album: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load album"
             }

@@ -375,7 +375,7 @@ struct LibraryView: View {
                     syncError = "Sync authExpired – no se cierra sesión. Revisa DebugLog. \(InnerTubeClient.shared.debugAuthState)"
                     showSyncError = true
                 }
-                print("❌ [LibraryView] sync authExpired \(InnerTubeClient.shared.debugAuthState)")
+                dlog("❌ [LibraryView] sync authExpired \(InnerTubeClient.shared.debugAuthState)")
             } catch InnerTubeError.notAuthenticated {
                 await MainActor.run {
                     syncError = "Please sign in to sync your library."
@@ -391,7 +391,7 @@ struct LibraryView: View {
                     syncError = "Sync failed: \(error.localizedDescription)"
                     showSyncError = true
                 }
-                print("Sync failed: \(error)")
+                dlog("Sync failed: \(error)")
             }
             isSyncing = false
         }

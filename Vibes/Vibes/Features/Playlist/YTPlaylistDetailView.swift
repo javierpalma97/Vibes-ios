@@ -109,28 +109,28 @@ struct YTPlaylistDetailView: View {
         errorMessage = nil
 
         do {
-            print("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
+            dlog("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
             await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist start id=\(ytPlaylist.id) nombre=\(ytPlaylist.name)") }
 
             // Check if this is a radio/mix playlist
             if let playlistId = ytPlaylist.playlistId {
                 // Radio playlist - use next endpoint with playlistId
-                print("🎵 [Playlist] Radio playlist detected, using playlistId: \(playlistId)")
+                dlog("🎵 [Playlist] Radio playlist detected, using playlistId: \(playlistId)")
                 songs = try await ytMusic.getRadioPlaylist(playlistId: playlistId)
-                print("🎵 [Playlist] Loaded \(songs.count) radio songs")
+                dlog("🎵 [Playlist] Loaded \(songs.count) radio songs")
             } else if ytPlaylist.id.hasPrefix("RD") {
                 // Radio playlist without explicit playlistId - use the id
-                print("🎵 [Playlist] Radio playlist (from RD prefix), using id as playlistId")
+                dlog("🎵 [Playlist] Radio playlist (from RD prefix), using id as playlistId")
                 songs = try await ytMusic.getRadioPlaylist(playlistId: ytPlaylist.id)
-                print("🎵 [Playlist] Loaded \(songs.count) radio songs")
+                dlog("🎵 [Playlist] Loaded \(songs.count) radio songs")
             } else {
                 // Regular playlist - use browse endpoint
                 let id = ytPlaylist.id
                 let browseId = (id.hasPrefix("VL") || id.hasPrefix("PL") || id.hasPrefix("FEmusic_") || id == "VLLM" || id == "SE" || id.hasPrefix("RD") || id.hasPrefix("MPREb_") || id.hasPrefix("MPSP") || id.hasPrefix("UC")) ? id : "VL\(id)"
-                print("🎵 [Playlist] Regular playlist, using browseId: \(browseId)")
+                dlog("🎵 [Playlist] Regular playlist, using browseId: \(browseId)")
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
-                print("🎵 [Playlist] Loaded \(songs.count) songs")
+                dlog("🎵 [Playlist] Loaded \(songs.count) songs")
                 await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist OK id=\(ytPlaylist.id) songs=\(songs.count)") }
                 // Persistir el conteo para que la lista muestre N canciones sin reabrir
                 if !songs.isEmpty {
@@ -146,7 +146,7 @@ struct YTPlaylistDetailView: View {
                 }
             }
         } catch {
-            print("❌ [Playlist] Error loading playlist: \(error)")
+            dlog("❌ [Playlist] Error loading playlist: \(error)")
             await MainActor.run { DebugLogger.shared.log("❌ detalle playlist id=\(ytPlaylist.id) err=\(error)") }
             errorMessage = "Failed to load playlist"
         }

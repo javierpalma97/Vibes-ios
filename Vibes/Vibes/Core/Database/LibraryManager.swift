@@ -33,7 +33,7 @@ class LibraryManager: ObservableObject {
             do {
                 try context.delete(model: t)
             } catch {
-                print("⚠️ deleteAllData \(t) failed: \(error)")
+                dlog("⚠️ deleteAllData \(t) failed: \(error)")
             }
         }
         try? context.save()
@@ -51,7 +51,7 @@ class LibraryManager: ObservableObject {
             try context.save()
             searchHistory = []
         } catch {
-            print("⚠️ clearSearchHistoryData failed: \(error)")
+            dlog("⚠️ clearSearchHistoryData failed: \(error)")
         }
     }
 
@@ -68,7 +68,7 @@ class LibraryManager: ObservableObject {
 
         if let songs = try? context.fetch(likedDescriptor) {
             likedSongs = songs
-            print("📚 [LibraryManager] Loaded \(songs.count) liked songs")
+            dlog("📚 [LibraryManager] Loaded \(songs.count) liked songs")
         }
 
         // Load playlists
@@ -78,7 +78,7 @@ class LibraryManager: ObservableObject {
 
         if let playlists = try? context.fetch(playlistDescriptor) {
             self.playlists = playlists
-            print("📚 [LibraryManager] Loaded \(playlists.count) playlists")
+            dlog("📚 [LibraryManager] Loaded \(playlists.count) playlists")
         }
 
         // Load recently played
@@ -90,7 +90,7 @@ class LibraryManager: ObservableObject {
 
         if let songs = try? context.fetch(recentDescriptor) {
             recentlyPlayed = songs
-            print("📚 [LibraryManager] Loaded \(songs.count) recently played songs")
+            dlog("📚 [LibraryManager] Loaded \(songs.count) recently played songs")
         }
 
         // Load search history
@@ -105,7 +105,7 @@ class LibraryManager: ObservableObject {
 
         // Load quick picks (matching Android implementation)
         quickPicks = await getQuickPicks()
-        print("📚 [LibraryManager] Loaded \(quickPicks.count) quick picks")
+        dlog("📚 [LibraryManager] Loaded \(quickPicks.count) quick picks")
     }
 
     func clearSearchHistory() {
@@ -126,26 +126,26 @@ class LibraryManager: ObservableObject {
 
     func syncLibrary() async throws {
         guard let context = modelContext else {
-            print("⚠️ [LibraryManager] No model context for sync")
+            dlog("⚠️ [LibraryManager] No model context for sync")
             await MainActor.run { DebugLogger.shared.log("⚠️ sync no ModelContext") }
             return
         }
 
-        print("🔄 [LibraryManager] Starting library sync...")
+        dlog("🔄 [LibraryManager] Starting library sync...")
         await MainActor.run { DebugLogger.shared.log("🔄 sync start isAuth=\(InnerTubeClient.shared.isAuthenticated) \(InnerTubeClient.shared.debugAuthState)") }
 
         // Sync liked songs (batch mode to avoid reloading after each song)
         do {
             await MainActor.run { DebugLogger.shared.log("📥 getLikedSongs start") }
             let ytLikedSongs = try await ytMusic.getLikedSongs()
-            print("📥 [LibraryManager] Syncing \(ytLikedSongs.count) liked songs...")
+            dlog("📥 [LibraryManager] Syncing \(ytLikedSongs.count) liked songs...")
             await MainActor.run { DebugLogger.shared.log("✅ getLikedSongs \(ytLikedSongs.count)") }
             for ytSong in ytLikedSongs {
                 await saveSong(ytSong, liked: true, skipReload: true)
             }
-            print("✅ [LibraryManager] Synced \(ytLikedSongs.count) liked songs")
+            dlog("✅ [LibraryManager] Synced \(ytLikedSongs.count) liked songs")
         } catch {
-            print("❌ [LibraryManager] Failed to sync liked songs: \(error)")
+            dlog("❌ [LibraryManager] Failed to sync liked songs: \(error)")
             await MainActor.run { DebugLogger.shared.log("❌ getLikedSongs \(error)") }
             throw error
         }
@@ -153,25 +153,25 @@ class LibraryManager: ObservableObject {
         // Sync playlists (batch mode to avoid reloading after each playlist)
         do {
             var ytPlaylists = try await ytMusic.getLibraryPlaylists()
-            print("📥 [LibraryManager] Syncing \(ytPlaylists.count) playlists...")
+            dlog("📥 [LibraryManager] Syncing \(ytPlaylists.count) playlists...")
             await MainActor.run { DebugLogger.shared.log("📥 getLibraryPlaylists \(ytPlaylists.count)") }
             // Fallback para cuentas con 1 sola lista creada por el usuario (a veces viene en carousel, no grid)
             if ytPlaylists.isEmpty {
                 do {
                     let alt = try await ytMusic.getAccountPlaylists()
-                    print("📚 [LibraryManager] Fallback getAccountPlaylists \(alt.count)")
+                    dlog("📚 [LibraryManager] Fallback getAccountPlaylists \(alt.count)")
                     await MainActor.run { DebugLogger.shared.log("📚 fallback accountPlaylists \(alt.count)") }
                     ytPlaylists = alt
                 } catch {
-                    print("⚠️ [LibraryManager] Fallback failed \(error)")
+                    dlog("⚠️ [LibraryManager] Fallback failed \(error)")
                 }
             }
             for ytPlaylist in ytPlaylists {
                 await savePlaylist(ytPlaylist, skipReload: true)
             }
-            print("✅ [LibraryManager] Synced \(ytPlaylists.count) playlists")
+            dlog("✅ [LibraryManager] Synced \(ytPlaylists.count) playlists")
         } catch {
-            print("❌ [LibraryManager] Failed to sync playlists: \(error)")
+            dlog("❌ [LibraryManager] Failed to sync playlists: \(error)")
             await MainActor.run { DebugLogger.shared.log("❌ getLibraryPlaylists \(error)") }
             // Don't throw - partial sync is okay
         }
@@ -179,33 +179,33 @@ class LibraryManager: ObservableObject {
         // Sync albums
         do {
             let ytAlbums = try await ytMusic.getLibraryAlbums()
-            print("📥 [LibraryManager] Syncing \(ytAlbums.count) albums...")
+            dlog("📥 [LibraryManager] Syncing \(ytAlbums.count) albums...")
             await MainActor.run { DebugLogger.shared.log("📥 getLibraryAlbums \(ytAlbums.count)") }
             for ytAlbum in ytAlbums {
                 await saveAlbum(ytAlbum, skipReload: true)
             }
-            print("✅ [LibraryManager] Synced \(ytAlbums.count) albums")
+            dlog("✅ [LibraryManager] Synced \(ytAlbums.count) albums")
         } catch {
-            print("⚠️ [LibraryManager] Failed to sync albums: \(error)")
+            dlog("⚠️ [LibraryManager] Failed to sync albums: \(error)")
         }
 
         // Sync artists
         do {
             let ytArtists = try await ytMusic.getLibraryArtists()
-            print("📥 [LibraryManager] Syncing \(ytArtists.count) artists...")
+            dlog("📥 [LibraryManager] Syncing \(ytArtists.count) artists...")
             await MainActor.run { DebugLogger.shared.log("📥 getLibraryArtists \(ytArtists.count)") }
             for ytArtist in ytArtists {
                 await saveArtist(ytArtist, skipReload: true)
             }
-            print("✅ [LibraryManager] Synced \(ytArtists.count) artists")
+            dlog("✅ [LibraryManager] Synced \(ytArtists.count) artists")
         } catch {
-            print("⚠️ [LibraryManager] Failed to sync artists: \(error)")
+            dlog("⚠️ [LibraryManager] Failed to sync artists: \(error)")
         }
 
         // Reload local data once at the end
-        print("🔄 [LibraryManager] Reloading library data...")
+        dlog("🔄 [LibraryManager] Reloading library data...")
         await loadLocalData()
-        print("✅ [LibraryManager] Library sync complete")
+        dlog("✅ [LibraryManager] Library sync complete")
     }
 
     func saveAlbum(_ ytAlbum: YTAlbum, skipReload: Bool = false) async {
@@ -275,7 +275,7 @@ class LibraryManager: ObservableObject {
 
     func saveSong(_ ytSong: YTSong, liked: Bool = false, skipReload: Bool = false) async {
         guard let context = modelContext else {
-            print("⚠️ [LibraryManager] No model context available")
+            dlog("⚠️ [LibraryManager] No model context available")
             return
         }
 
@@ -325,7 +325,7 @@ class LibraryManager: ObservableObject {
         do {
             try context.save()
         } catch {
-            print("❌ [LibraryManager] Failed to save song \(ytSong.title): \(error)")
+            dlog("❌ [LibraryManager] Failed to save song \(ytSong.title): \(error)")
         }
 
         // Only reload if not in batch mode
@@ -458,7 +458,7 @@ class LibraryManager: ObservableObject {
         do {
             try context.save()
         } catch {
-            print("❌ [LibraryManager] Failed to save playlist \(ytPlaylist.name): \(error)")
+            dlog("❌ [LibraryManager] Failed to save playlist \(ytPlaylist.name): \(error)")
         }
 
         // Only reload if not in batch mode
@@ -554,7 +554,7 @@ class LibraryManager: ObservableObject {
             )
 
             if let maps = try? context.fetch(descriptor), !maps.isEmpty {
-                print("📋 [LibraryManager] Found \(maps.count) PlaylistSongMap entries for playlist \(playlist.id)")
+                dlog("📋 [LibraryManager] Found \(maps.count) PlaylistSongMap entries for playlist \(playlist.id)")
 
                 // Fix broken relationships if needed
                 var needsFix = false
@@ -569,20 +569,20 @@ class LibraryManager: ObservableObject {
                 }
 
                 if needsFix {
-                    print("📋 [LibraryManager] Fixed broken song relationships, saving...")
+                    dlog("📋 [LibraryManager] Fixed broken song relationships, saving...")
                     try? context.save()
                 }
 
                 let songs = maps.compactMap { $0.song }
-                print("📋 [LibraryManager] Returning \(songs.count) songs from database")
+                dlog("📋 [LibraryManager] Returning \(songs.count) songs from database")
 
                 if songs.isEmpty {
-                    print("📋 [LibraryManager] All songs are nil, fetching from API")
+                    dlog("📋 [LibraryManager] All songs are nil, fetching from API")
                 } else {
                     // Check if database count matches expected count
                     // If not, the playlist has been updated (e.g., pagination was added), so re-fetch
                     if playlist.songCount > 0 && playlist.songCount != songs.count {
-                        print("📋 [LibraryManager] Database has \(songs.count) songs but playlist expects \(playlist.songCount), re-fetching from API")
+                        dlog("📋 [LibraryManager] Database has \(songs.count) songs but playlist expects \(playlist.songCount), re-fetching from API")
                         // Clear old mappings
                         for map in maps {
                             context.delete(map)
@@ -595,7 +595,7 @@ class LibraryManager: ObservableObject {
                 }
             }
 
-            print("📋 [LibraryManager] No songs found in database, fetching from API")
+            dlog("📋 [LibraryManager] No songs found in database, fetching from API")
 
             // Not in database, fetch from YouTube
             do {
@@ -609,7 +609,7 @@ class LibraryManager: ObservableObject {
 
                 // Save songs to database
                 var songs: [Song] = []
-                print("📋 [LibraryManager] Saving \(ytSongs.count) songs to database")
+                dlog("📋 [LibraryManager] Saving \(ytSongs.count) songs to database")
                 for (index, ytSong) in ytSongs.enumerated() {
                     await saveSong(ytSong)
                     if let song = await getSong(id: ytSong.id) {
@@ -631,9 +631,9 @@ class LibraryManager: ObservableObject {
                     }
                 }
 
-                print("📋 [LibraryManager] Created \(songs.count) PlaylistSongMap entries")
+                dlog("📋 [LibraryManager] Created \(songs.count) PlaylistSongMap entries")
                 try? context.save()
-                print("📋 [LibraryManager] Database saved, playlist songCount updated to \(playlist.songCount)")
+                dlog("📋 [LibraryManager] Database saved, playlist songCount updated to \(playlist.songCount)")
 
                 // Reload library data to update UI with correct song counts
                 await loadLocalData()

@@ -165,7 +165,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             interfaceController?.pushTemplate(chartsTemplate, animated: true, completion: nil)
 
         } catch {
-            print("❌ [CarPlay] Failed to load charts: \(error)")
+            dlog("❌ [CarPlay] Failed to load charts: \(error)")
             let errorItem = CPListItem(text: "Failed to load", detailText: "Try again later")
             let errorTemplate = CPListTemplate(title: "Charts", sections: [CPListSection(items: [errorItem])])
             interfaceController?.popTemplate(animated: false, completion: nil)
@@ -198,7 +198,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             interfaceController?.pushTemplate(template, animated: true, completion: nil)
 
         } catch {
-            print("❌ [CarPlay] Failed to load new releases: \(error)")
+            dlog("❌ [CarPlay] Failed to load new releases: \(error)")
         }
     }
 
@@ -237,7 +237,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
                 await queueManager.setQueue(librarySongs)
             }
         } catch {
-            print("❌ [CarPlay] Failed to play album: \(error)")
+            dlog("❌ [CarPlay] Failed to play album: \(error)")
         }
     }
 

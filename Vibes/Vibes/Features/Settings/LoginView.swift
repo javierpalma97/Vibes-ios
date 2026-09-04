@@ -136,11 +136,11 @@ struct WebViewRepresentable: UIViewRepresentable {
         // Track ALL navigation to see if we visit accounts.google.com
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             if let url = navigationAction.request.url {
-                print("🧭 [Login] Navigation to: \(url.absoluteString)")
+                dlog("🧭 [Login] Navigation to: \(url.absoluteString)")
 
                 if url.host?.contains("accounts.google.com") == true {
                     hasVisitedGoogleAccounts = true
-                    print("✅ [Login] Visiting Google OAuth page - this is where SAPISID should be set")
+                    dlog("✅ [Login] Visiting Google OAuth page - this is where SAPISID should be set")
                 }
             }
             decisionHandler(.allow)
@@ -148,7 +148,7 @@ struct WebViewRepresentable: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if let url = webView.url {
-                print("🏁 [Login] Page finished loading: \(url.absoluteString)")
+                dlog("🏁 [Login] Page finished loading: \(url.absoluteString)")
 
                 // If we just finished loading Google accounts page, check for cookies
                 if url.host?.contains("accounts.google.com") == true {
@@ -159,17 +159,17 @@ struct WebViewRepresentable: UIViewRepresentable {
                         // Check if SAPISID cookie is now present
                         let cookies = await self.getCookies(from: webView)
                         let hasSAPISID = cookies.contains("SAPISID=")
-                        print("🔍 [Login] After Google page load - Has SAPISID: \(hasSAPISID)")
+                        dlog("🔍 [Login] After Google page load - Has SAPISID: \(hasSAPISID)")
 
                         if hasSAPISID {
-                            print("✅ [Login] SAPISID captured from Google OAuth! Waiting for redirect back to YouTube Music...")
+                            dlog("✅ [Login] SAPISID captured from Google OAuth! Waiting for redirect back to YouTube Music...")
                         }
                     }
                 }
 
                 // If we've visited Google accounts and are back on YouTube Music, check login again
                 if url.host?.contains("music.youtube.com") == true && hasVisitedGoogleAccounts && !hasCheckedLogin {
-                    print("🔄 [Login] Back on YouTube Music after visiting Google - checking login again...")
+                    dlog("🔄 [Login] Back on YouTube Music after visiting Google - checking login again...")
                     // The normal login check will run and should now find SAPISID
                 }
             }
@@ -235,64 +235,64 @@ struct WebViewRepresentable: UIViewRepresentable {
                             let accountName = json["accountName"] as? String
                             let accountEmail = json["accountEmail"] as? String
 
-                            print("🔐 [Login] Got auth data from JavaScript:")
-                            print("  - VisitorData: \(visitorData.prefix(30))...")
-                            print("  - DataSyncId: \(dataSyncId)")
+                            dlog("🔐 [Login] Got auth data from JavaScript:")
+                            dlog("  - VisitorData: \(visitorData.prefix(30))...")
+                            dlog("  - DataSyncId: \(dataSyncId)")
 
                             // CRITICAL: Use WKWebView cookie store (like Android's CookieManager.getCookie())
                             // document.cookie CANNOT access HTTPOnly cookies like SAPISID
-                            print("📦 [Login] Collecting ALL cookies from cookie store (including HTTPOnly)...")
+                            dlog("📦 [Login] Collecting ALL cookies from cookie store (including HTTPOnly)...")
                             let allCookies = await self.getCookies(from: webView)
-                            print("  - Total cookies: \(allCookies.count) chars")
-                            print("  - Cookie preview: \(allCookies.prefix(300))...")
+                            dlog("  - Total cookies: \(allCookies.count) chars")
+                            dlog("  - Cookie preview: \(allCookies.prefix(300))...")
 
                             // Check for SAPISID in the cookie string
                             let hasSAPISID = allCookies.contains("SAPISID=")
-                            print("🔑 [Login] Has SAPISID cookie: \(hasSAPISID)")
-                            print("🔍 [Login] Has visited Google accounts: \(hasVisitedGoogleAccounts)")
+                            dlog("🔑 [Login] Has SAPISID cookie: \(hasSAPISID)")
+                            dlog("🔍 [Login] Has visited Google accounts: \(hasVisitedGoogleAccounts)")
 
                             if !hasSAPISID && !hasVisitedGoogleAccounts {
-                                print("⏳ [Login] No SAPISID yet and haven't visited Google OAuth - waiting for redirect...")
-                                print("   Don't close dialog yet - OAuth redirect should happen soon")
+                                dlog("⏳ [Login] No SAPISID yet and haven't visited Google OAuth - waiting for redirect...")
+                                dlog("   Don't close dialog yet - OAuth redirect should happen soon")
                                 // Don't mark as successful yet - wait for OAuth redirect
                                 return
                             }
 
                             if !hasSAPISID && hasVisitedGoogleAccounts {
-                                print("⚠️ [Login] SAPISID missing even after visiting accounts.google.com!")
-                                print("   Waiting a bit longer for cookies to sync...")
+                                dlog("⚠️ [Login] SAPISID missing even after visiting accounts.google.com!")
+                                dlog("   Waiting a bit longer for cookies to sync...")
                                 // Wait and try again
                                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                                 let cookiesAfterWait = await self.getCookies(from: webView)
                                 let hasSAPISIDNow = cookiesAfterWait.contains("SAPISID=")
 
                                 if hasSAPISIDNow {
-                                    print("✅ [Login] SAPISID appeared after waiting!")
+                                    dlog("✅ [Login] SAPISID appeared after waiting!")
                                     hasCheckedLogin = true
                                     parent.onLoginSuccess(cookiesAfterWait, visitorData, dataSyncId, accountName, accountEmail)
                                 } else {
-                                    print("❌ [Login] SAPISID still missing - OAuth cookies not being saved")
-                                    print("   This is a WKWebView cookie storage issue")
+                                    dlog("❌ [Login] SAPISID still missing - OAuth cookies not being saved")
+                                    dlog("   This is a WKWebView cookie storage issue")
                                 }
                                 return
                             }
 
                             if !allCookies.isEmpty && !visitorData.isEmpty && !dataSyncId.isEmpty && hasSAPISID {
                                 hasCheckedLogin = true
-                                print("✅ [Login] Authentication successful with SAPISID!")
+                                dlog("✅ [Login] Authentication successful with SAPISID!")
                                 parent.onLoginSuccess(allCookies, visitorData, dataSyncId, accountName, accountEmail)
                             } else {
-                                print("❌ [Login] Missing required data")
+                                dlog("❌ [Login] Missing required data")
                             }
                         } else {
-                            print("ℹ️ [Login] User not logged in yet")
+                            dlog("ℹ️ [Login] User not logged in yet")
                             if let error = json["error"] as? String {
-                                print("  Error: \(error)")
+                                dlog("  Error: \(error)")
                             }
                         }
                     }
                 } catch {
-                    print("❌ [Login] Error checking login status: \(error)")
+                    dlog("❌ [Login] Error checking login status: \(error)")
                 }
             }
         }
@@ -311,7 +311,7 @@ struct WebViewRepresentable: UIViewRepresentable {
                 }
             }
 
-            print("🍪 [Login] Found \(allCookies.count) total cookies in WKWebView store")
+            dlog("🍪 [Login] Found \(allCookies.count) total cookies in WKWebView store")
 
             // Keep all YouTube + Google auth cookies (SAPISID lives on google.com for some accounts)
             // This fixes missing SAPISID leading to auth failures (Sync failed: vibes.innertubeError 0)
@@ -326,13 +326,13 @@ struct WebViewRepresentable: UIViewRepresentable {
             var finalCookies = filteredCookies
             let hasSAPISID = filteredCookies.contains { $0.name == "SAPISID" || $0.name == "__Secure-3PAPISID" }
             if !hasSAPISID {
-                print("⚠️ [Login] No SAPISID in filtered set, including all cookies as fallback")
+                dlog("⚠️ [Login] No SAPISID in filtered set, including all cookies as fallback")
                 finalCookies = allCookies
             }
 
-            print("🍪 [Login] Filtered to \(finalCookies.count) cookies:")
+            dlog("🍪 [Login] Filtered to \(finalCookies.count) cookies:")
             for cookie in finalCookies {
-                print("   - \(cookie.name) (domain: \(cookie.domain), httpOnly: \(cookie.isHTTPOnly))")
+                dlog("   - \(cookie.name) (domain: \(cookie.domain), httpOnly: \(cookie.isHTTPOnly))")
             }
 
             // Format as cookie header string (matching Android's format)

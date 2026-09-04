@@ -330,7 +330,7 @@ class YouTubeMusic {
                 // Check playability status
                 guard response.playabilityStatus?.status == "OK" else {
                     let reason = response.playabilityStatus?.reason ?? response.playabilityStatus?.status ?? "unknown"
-                    print("⚠️ [YouTube API] Client \(clientType) not playable: \(reason)")
+                    dlog("⚠️ [YouTube API] Client \(clientType) not playable: \(reason)")
                     await MainActor.run { DebugLogger.shared.log("⚠️ player \(clientType) no reproducible: \(reason)") }
                     if response.playabilityStatus?.status == "LOGIN_REQUIRED" {
                         lastError = InnerTubeError.authenticationExpired
@@ -349,16 +349,16 @@ class YouTubeMusic {
                     }()
 
                     if hasUsableFormat {
-                        print("🎵 [YouTube API] Using client: \(clientType) for \(response.videoDetails?.title ?? "unknown")")
+                        dlog("🎵 [YouTube API] Using client: \(clientType) for \(response.videoDetails?.title ?? "unknown")")
                         return (response, clientType)
                     } else {
-                        print("⚠️ [YouTube API] Client \(clientType) has no usable formats")
+                        dlog("⚠️ [YouTube API] Client \(clientType) has no usable formats")
                         await MainActor.run { DebugLogger.shared.log("⚠️ player \(clientType) sin formatos usables") }
                     }
                 }
             } catch {
                 lastError = error
-                print("⚠️ [YouTube API] Client \(clientType) request failed: \(error)")
+                dlog("⚠️ [YouTube API] Client \(clientType) request failed: \(error)")
                 await MainActor.run { DebugLogger.shared.log("❌ player \(clientType) err=\(error)") }
                 continue
             }
@@ -404,9 +404,9 @@ class YouTubeMusic {
         if let lengthSeconds = playerResponse.videoDetails?.lengthSeconds,
            let duration = Double(lengthSeconds) {
             correctDuration = duration
-            print("🎵 [YouTube API] lengthSeconds for \(playerResponse.videoDetails?.title ?? "unknown"): \(lengthSeconds)s")
+            dlog("🎵 [YouTube API] lengthSeconds for \(playerResponse.videoDetails?.title ?? "unknown"): \(lengthSeconds)s")
         } else {
-            print("⚠️ [YouTube API] No lengthSeconds in response for \(playerResponse.videoDetails?.title ?? "unknown")")
+            dlog("⚠️ [YouTube API] No lengthSeconds in response for \(playerResponse.videoDetails?.title ?? "unknown")")
         }
 
         guard let streamingData = playerResponse.streamingData else {
@@ -461,7 +461,7 @@ class YouTubeMusic {
             throw InnerTubeError.invalidResponse
         }
 
-        print("🎵 [YouTube API] Selected format (quality: \(quality.rawValue)) - itag: \(bestFormat.itag ?? 0), mimeType: \(bestFormat.mimeType), bitrate: \(bestFormat.bitrate ?? 0), contentLength: \(bestFormat.contentLength ?? "unknown")")
+        dlog("🎵 [YouTube API] Selected format (quality: \(quality.rawValue)) - itag: \(bestFormat.itag ?? 0), mimeType: \(bestFormat.mimeType), bitrate: \(bestFormat.bitrate ?? 0), contentLength: \(bestFormat.contentLength ?? "unknown")")
 
         // Handle cipher when plain URL is absent (signatureCipher or cipher)
         let directUrl = bestFormat.url ?? decodeSignatureCipher(bestFormat.signatureCipher) ?? decodeSignatureCipher(bestFormat.cipher)
@@ -2232,9 +2232,9 @@ class YouTubeMusic {
 
         // "VLLM" is the browse ID for the "Liked Music" playlist
         // Matching Android's YouTube.playlist("LM")
-        print("🎵 [YouTube API] Fetching liked songs from playlist VLLM...")
+        dlog("🎵 [YouTube API] Fetching liked songs from playlist VLLM...")
         let (_, songs) = try await getPlaylist(browseId: "VLLM")
-        print("✅ [YouTube API] Retrieved \(songs.count) liked songs")
+        dlog("✅ [YouTube API] Retrieved \(songs.count) liked songs")
         return songs
     }
 

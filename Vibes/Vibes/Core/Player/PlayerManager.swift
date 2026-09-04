@@ -81,9 +81,9 @@ class PlayerManager: NSObject, ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
-            print("🎵 [Player] Audio session configured for playback")
+            dlog("🎵 [Player] Audio session configured for playback")
         } catch {
-            print("❌ [Player] Failed to configure audio session: \(error)")
+            dlog("❌ [Player] Failed to configure audio session: \(error)")
         }
 
         player = AVPlayer()
@@ -220,7 +220,7 @@ class PlayerManager: NSObject, ObservableObject {
     func playSong(_ song: Song) async {
         let dbg = DebugLogger.shared
         await MainActor.run { dbg.log("▶️ playSong: \(song.title) id=\(song.id)") }
-        print("🎵 [Player] Starting to play: \(song.title)")
+        dlog("🎵 [Player] Starting to play: \(song.title)")
         hasTriggeredEndForCurrentItem = false
         self.currentSong = song
         self.playerState = .loading
@@ -247,7 +247,7 @@ class PlayerManager: NSObject, ObservableObject {
             // Check if song is downloaded locally
             let downloadManager = DownloadManager.shared
             if downloadManager.isDownloaded(song.id) {
-                print("🎵 [Player] Playing DOWNLOADED file for \(song.title)")
+                dlog("🎵 [Player] Playing DOWNLOADED file for \(song.title)")
                 let localURL = downloadManager.localFileURL(for: song.id)
                 url = localURL
                 newPlayerItem = AVPlayerItem(url: url)
@@ -258,19 +258,19 @@ class PlayerManager: NSObject, ObservableObject {
                     let (_, duration, _, loudness) = try await getStreamUrl(for: song.id)
                     youtubeDuration = duration
                     youtubeLoudness = loudness
-                    print("🎵 [Player] Fetched YouTube API duration for downloaded file: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
+                    dlog("🎵 [Player] Fetched YouTube API duration for downloaded file: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
                 } catch {
-                    print("⚠️ [Player] Could not fetch YouTube duration for downloaded file: \(error)")
+                    dlog("⚠️ [Player] Could not fetch YouTube duration for downloaded file: \(error)")
                 }
             } else {
-                print("🎵 [Player] Playing STREAMED file for \(song.title)")
+                dlog("🎵 [Player] Playing STREAMED file for \(song.title)")
                 await MainActor.run { DebugLogger.shared.log("🌐 fetching streamUrl for \(song.id) client=\(InnerTubeClient.shared.isAuthenticated ? "auth" : "noauth")") }
                 // Get stream URL from network
                 let (streamUrl, duration, clientType, loudness) = try await getStreamUrl(for: song.id)
                 youtubeDuration = duration
                 youtubeLoudness = loudness
-                print("🎵 [Player] Got YouTube API duration: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
-                print("🎵 [Player] Stream URL: \(streamUrl.prefix(120))...")
+                dlog("🎵 [Player] Got YouTube API duration: \(duration ?? -1)s, loudness: \(loudness ?? -14)dB")
+                dlog("🎵 [Player] Stream URL: \(streamUrl.prefix(120))...")
                 await MainActor.run { DebugLogger.shared.log("✅ streamUrl OK client=\(clientType) dur=\(duration ?? -1) url=\(streamUrl.prefix(80))") }
 
                 // Use CustomResourceLoader via custom scheme to handle YouTube's range/throttling correctly
@@ -313,13 +313,13 @@ class PlayerManager: NSObject, ObservableObject {
                 newPlayerItem.forwardPlaybackEndTime = CMTime(
                     seconds: ytDuration,
                     preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-                print("🎵 [Player] Set duration from YouTube API: \(ytDuration)s for \(song.title)")
+                dlog("🎵 [Player] Set duration from YouTube API: \(ytDuration)s for \(song.title)")
             } else if let duration = song.duration {
                 self.duration = duration
                 newPlayerItem.forwardPlaybackEndTime = CMTime(
                     seconds: duration,
                     preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-                print("🎵 [Player] Set duration from song.duration: \(duration)s for \(song.title)")
+                dlog("🎵 [Player] Set duration from song.duration: \(duration)s for \(song.title)")
             }
 
             // Replace current item
@@ -349,21 +349,21 @@ class PlayerManager: NSObject, ObservableObject {
                 let clampedGain = max(0.5, min(2.0, linearGain))
 
                 player?.volume = Float(clampedGain)
-                print("🔊 [Player] Applied normalization: \(loudnessDb)dB -> \(targetLoudness)dB (gain: \(clampedGain)x)")
+                dlog("🔊 [Player] Applied normalization: \(loudnessDb)dB -> \(targetLoudness)dB (gain: \(clampedGain)x)")
             } else {
                 player?.volume = 1.0
                 if normalizeAudio {
-                    print("⚠️ [Player] Normalization enabled but no loudness data available")
+                    dlog("⚠️ [Player] Normalization enabled but no loudness data available")
                 }
             }
 
         } catch {
-            print("❌ [Player] Error playing song: \(error)")
+            dlog("❌ [Player] Error playing song: \(error)")
             await MainActor.run { DebugLogger.shared.log("❌ playSong error \(error) id=\(song.id)") }
 
             // If we get a 404, the videoId might be invalid - delete the song from DB so it can be re-fetched
             if case InnerTubeError.httpError(let statusCode) = error, statusCode == 404 {
-                print("⚠️ [Player] 404 error - deleting song from DB to force re-fetch")
+                dlog("⚠️ [Player] 404 error - deleting song from DB to force re-fetch")
                 await LibraryManager.shared.deleteSong(song)
             }
 
@@ -418,7 +418,7 @@ class PlayerManager: NSObject, ObservableObject {
         guard let player = player else { return }
         let rate = Float(speed)
         player.rate = isPlaying ? rate : 0 // Only apply if currently playing
-        print("🎵 [Player] Playback speed set to \(speed)x")
+        dlog("🎵 [Player] Playback speed set to \(speed)x")
         updateNowPlayingInfo()
     }
 
@@ -439,7 +439,7 @@ class PlayerManager: NSObject, ObservableObject {
     private func getStreamUrl(for videoId: String) async throws -> (url: String, duration: TimeInterval?, clientType: InnerTubeClientType, loudnessDb: Double?) {
         // ALWAYS fetch fresh data to get correct duration (YouTube API is source of truth)
         // Don't use cache because cached URLs don't include duration, leading to doubled durations from asset
-        print("🎵 [Player] Fetching fresh stream URL for \(videoId)")
+        dlog("🎵 [Player] Fetching fresh stream URL for \(videoId)")
 
         // Fetch new URL, duration, and client type
         let (url, expiry, duration, clientType, loudnessDb) = try await ytMusic.getStreamUrl(videoId: videoId)
@@ -459,14 +459,14 @@ class PlayerManager: NSObject, ObservableObject {
         case .readyToPlay:
             // Use YouTube API duration as source of truth (asset duration is often doubled)
             let assetDuration = item.asset.duration.seconds
-            print("🎵 [Player] Asset ready - YouTube API duration: \(self.duration)s, asset duration: \(assetDuration)s")
-            print("🎵 [Player] Tracks: \(item.asset.tracks.count), duration isFinite: \(assetDuration.isFinite)")
+            dlog("🎵 [Player] Asset ready - YouTube API duration: \(self.duration)s, asset duration: \(assetDuration)s")
+            dlog("🎵 [Player] Tracks: \(item.asset.tracks.count), duration isFinite: \(assetDuration.isFinite)")
 
             // If we have YouTube API duration, KEEP it and ignore asset
             if self.duration > 0 {
                 // We have YouTube API duration - this is correct, don't change it
                 if abs(self.duration - assetDuration) > 2.0 {
-                    print("⚠️ [Player] Asset duration (\(assetDuration)s) differs from YouTube API (\(self.duration)s). Using YouTube API (correct).")
+                    dlog("⚠️ [Player] Asset duration (\(assetDuration)s) differs from YouTube API (\(self.duration)s). Using YouTube API (correct).")
                 }
                 // Keep self.duration from YouTube API, update song database
                 if let song = self.currentSong {
@@ -477,7 +477,7 @@ class PlayerManager: NSObject, ObservableObject {
             } else if assetDuration.isFinite && assetDuration > 0 {
                 // No YouTube API duration, fall back to asset (likely downloaded file)
                 self.duration = assetDuration
-                print("🎵 [Player] Using asset duration (no YouTube API duration available): \(assetDuration)s")
+                dlog("🎵 [Player] Using asset duration (no YouTube API duration available): \(assetDuration)s")
 
                 if let song = self.currentSong {
                     let minutes = Int(assetDuration) / 60
@@ -497,11 +497,11 @@ class PlayerManager: NSObject, ObservableObject {
                 let speed = UserDefaults.standard.double(forKey: "playbackSpeed")
                 let rate = Float(speed == 0 ? 1.0 : speed)
                 player?.rate = rate
-                print("🎵 [Player] Auto-resumed at rate \(rate) after readyToPlay")
+                dlog("🎵 [Player] Auto-resumed at rate \(rate) after readyToPlay")
             }
         case .failed:
             if let error = item.error {
-                print("❌ [Player] Error: \(error.localizedDescription)")
+                dlog("❌ [Player] Error: \(error.localizedDescription)")
                 Task { await MainActor.run { DebugLogger.shared.log("❌ AVItem failed \(error.localizedDescription) id=\(self.currentSong?.id ?? "?") retry=\(self.retryCount)") } }
                 playerState = .error(error)
                 // Auto-retry una vez para 403 intermitentes (pa ti toa, Dai Dai) – al cambiar de canción y volver funciona
@@ -510,7 +510,7 @@ class PlayerManager: NSObject, ObservableObject {
                     if lastRetrySongId != failedId {
                         retryCount += 1
                         lastRetrySongId = failedId
-                        print("🔄 [Player] Reintentando \(song.title) en 1.2s (retry \(retryCount))")
+                        dlog("🔄 [Player] Reintentando \(song.title) en 1.2s (retry \(retryCount))")
                         Task { await MainActor.run { DebugLogger.shared.log("🔄 retry \(song.title) en 1.2s") } }
                         Task {
                             try? await Task.sleep(nanoseconds: 1_200_000_000)

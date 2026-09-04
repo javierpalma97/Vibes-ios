@@ -390,7 +390,7 @@ class InnerTubeClient {
             request.setValue(bearer, forHTTPHeaderField: "Authorization")
             // Para OAuth, no mandamos Cookie SAPISIDHASH, solo Bearer + visitorData
             Task { @MainActor in DebugLogger.shared.log("🔑 oauth \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))") }
-            print("🔑 [OAuth] \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))")
+            dlog("🔑 [OAuth] \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))")
             // Si hay cookies, las mandamos también como fallback pero sin SAPISIDHASH
             if shouldSendAuth, let cookies = cookies {
                 request.setValue(cookies, forHTTPHeaderField: "Cookie")
@@ -402,15 +402,15 @@ class InnerTubeClient {
             if let sapisidHash = generateSAPISIDHASH() {
                 request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
                 Task { @MainActor in DebugLogger.shared.log("🔑 auth \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))") }
-                print("🔑 [Auth] \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))")
+                dlog("🔑 [Auth] \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))")
             } else {
                 Task { @MainActor in DebugLogger.shared.log("⚠️ no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))") }
-                print("⚠️ [Auth] no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))")
+                dlog("⚠️ [Auth] no SAPISIDHASH for \(endpoint) \(clientType) cookiesLen=\(cookies.count) map=\(cookieMap.keys.sorted().prefix(5))")
             }
         } else if effectiveIsAuth && endpoint != "player" {
             let isOAuth = OAuthManager.isAuthenticatedSync
             Task { @MainActor in DebugLogger.shared.log("⚠️ shouldSendAuth false for \(endpoint) \(clientType) isAuth=\(effectiveIsAuth) oauth=\(isOAuth) forceNoAuth=\(forceNoAuth)") }
-            print("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType) oauth=\(isOAuth) forceNoAuth=\(forceNoAuth)")
+            dlog("⚠️ [Auth] shouldSendAuth false for \(endpoint) \(clientType) oauth=\(isOAuth) forceNoAuth=\(forceNoAuth)")
         }
 
         // Build request body with context
@@ -429,7 +429,7 @@ class InnerTubeClient {
 
     private func generateSAPISIDHASH() -> String? {
         guard cookies != nil else {
-            print("⚠️ [Auth] generateSAPISIDHASH no cookies")
+            dlog("⚠️ [Auth] generateSAPISIDHASH no cookies")
             return nil
         }
 
@@ -441,12 +441,12 @@ class InnerTubeClient {
             ?? cookieMap["__Secure-1PAPISID"]
 
         guard let sid = sapisid, !sid.isEmpty else {
-            print("⚠️ [Auth] SAPISID vacío mapKeys=\(cookieMap.keys.sorted()) cookiesLen=\(cookies?.count ?? 0)")
+            dlog("⚠️ [Auth] SAPISID vacío mapKeys=\(cookieMap.keys.sorted()) cookiesLen=\(cookies?.count ?? 0)")
             Task { @MainActor in DebugLogger.shared.log("⚠️ SAPISID vacío map=\(self.cookieMap.keys.sorted().prefix(5)) len=\(self.cookies?.count ?? 0)") }
             return nil
         }
         // Log sapisid prefix for debug (no exponer completo)
-        print("🔑 [Auth] SAPISID=\(sid.prefix(10))... origin=https://music.youtube.com")
+        dlog("🔑 [Auth] SAPISID=\(sid.prefix(10))... origin=https://music.youtube.com")
 
         let currentTime = Int(Date().timeIntervalSince1970)
         let origin = "https://music.youtube.com"
@@ -487,7 +487,7 @@ class InnerTubeClient {
             let isOAuth = OAuthManager.isAuthenticatedSync
             let dbg = debugAuthState
             await MainActor.run { DebugLogger.shared.log("❌ HTTP \(httpResponse.statusCode) \(endpoint) \(clientType) isAuth=\(isAuth) oauth=\(isOAuth) \(dbg) body=\(bodyPreview.prefix(400))") }
-            print("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(clientType) \(dbg) oauth=\(isOAuth) body=\(bodyPreview.prefix(1000))")
+            dlog("❌ [InnerTube] HTTP \(httpResponse.statusCode) \(endpoint) \(clientType) \(dbg) oauth=\(isOAuth) body=\(bodyPreview.prefix(1000))")
             // Map 401/403 to authenticationExpired when logged in (session expired)
             // Si forceNoAuth, no es error de sesión, es solo que ese cliente no necesita auth
             if (httpResponse.statusCode == 401 || httpResponse.statusCode == 403) && !forceNoAuth && (isAuthenticated || OAuthManager.isAuthenticatedSync) {

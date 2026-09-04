@@ -35,7 +35,7 @@ class LyricsManager: ObservableObject {
 
         // Check in-memory cache first
         if let cached = lruCache[song.id] {
-            print("🎵 [Lyrics] Using in-memory cache for \(song.title)")
+            dlog("🎵 [Lyrics] Using in-memory cache for \(song.title)")
             currentLyrics = cached
             updateCacheOrder(songId: song.id)
             return
@@ -48,7 +48,7 @@ class LyricsManager: ObservableObject {
                 predicate: #Predicate { $0.songId == songId }
             )
             if let dbLyrics = try? context.fetch(descriptor).first {
-                print("🎵 [Lyrics] Using database cache for \(song.title) (source: \(dbLyrics.source))")
+                dlog("🎵 [Lyrics] Using database cache for \(song.title) (source: \(dbLyrics.source))")
                 currentLyrics = dbLyrics
                 addToMemoryCache(songId: song.id, lyrics: dbLyrics)
                 return
@@ -56,11 +56,11 @@ class LyricsManager: ObservableObject {
         }
 
         // Fetch from providers (fallback chain)
-        print("🎵 [Lyrics] Fetching lyrics for \(song.title) from providers...")
+        dlog("🎵 [Lyrics] Fetching lyrics for \(song.title) from providers...")
         for provider in providers {
             do {
                 if let lyrics = try await provider.fetchLyrics(song: song) {
-                    print("✅ [Lyrics] Found lyrics from \(provider.name)")
+                    dlog("✅ [Lyrics] Found lyrics from \(provider.name)")
                     currentLyrics = lyrics
 
                     // Save to database
@@ -74,11 +74,11 @@ class LyricsManager: ObservableObject {
                     return
                 }
             } catch {
-                print("⚠️ [Lyrics] Failed to fetch from \(provider.name): \(error)")
+                dlog("⚠️ [Lyrics] Failed to fetch from \(provider.name): \(error)")
             }
         }
 
-        print("❌ [Lyrics] No lyrics found for \(song.title)")
+        dlog("❌ [Lyrics] No lyrics found for \(song.title)")
     }
 
     /// Update current line index based on playback time
@@ -117,9 +117,9 @@ class LyricsManager: ObservableObject {
         if let context = modelContext {
             do {
                 try context.delete(model: Lyrics.self)
-                print("✅ [Lyrics] Cache cleared")
+                dlog("✅ [Lyrics] Cache cleared")
             } catch {
-                print("❌ [Lyrics] Failed to clear cache: \(error)")
+                dlog("❌ [Lyrics] Failed to clear cache: \(error)")
             }
         }
     }

@@ -32,3 +32,12 @@ class DebugLogger: ObservableObject {
         logs.joined(separator: "\n")
     }
 }
+
+/// Log visible en consola Xcode Y en el visor in-app (Ajustes → Debug).
+/// Sustituto directo de `print(`: llamable desde cualquier contexto
+/// (sync/async, cualquier actor). DebugLogger.log ya imprime por consola.
+func dlog(_ message: String) {
+    Task { @MainActor in
+        DebugLogger.shared.log(message)
+    }
+}

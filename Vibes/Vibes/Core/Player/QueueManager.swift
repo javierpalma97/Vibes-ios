@@ -216,7 +216,7 @@ class QueueManager: ObservableObject {
                 persistQueue()
             }
         } catch {
-            print("❌ [Queue] Failed to fetch more radio songs: \(error)")
+            dlog("❌ [Queue] Failed to fetch more radio songs: \(error)")
         }
 
         isFetchingMore = false
@@ -292,7 +292,7 @@ class QueueManager: ObservableObject {
                 // Restore index, but clamp to valid range
                 self.currentIndex = min(max(0, queueData.currentIndex), loadedSongs.count - 1)
 
-                print("📋 [Queue] Restored queue with \(loadedSongs.count) songs, index: \(self.currentIndex)")
+                dlog("📋 [Queue] Restored queue with \(loadedSongs.count) songs, index: \(self.currentIndex)")
             }
         }
     }

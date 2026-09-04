@@ -22,7 +22,7 @@ class LrcLibProvider: LyricsProvider {
         let searchURL = "\(baseURL)/search?track_name=\(trackName)&artist_name=\(artistName)"
 
         guard let url = URL(string: searchURL) else {
-            print("❌ [LrcLib] Invalid URL: \(searchURL)")
+            dlog("❌ [LrcLib] Invalid URL: \(searchURL)")
             return nil
         }
 
@@ -43,7 +43,7 @@ class LrcLibProvider: LyricsProvider {
         })
 
         guard let match = bestMatch, abs(match.duration - songDuration) < 5.0 else {
-            print("⚠️ [LrcLib] No match found within duration threshold")
+            dlog("⚠️ [LrcLib] No match found within duration threshold")
             return nil
         }
 
@@ -116,7 +116,7 @@ class KuGouProvider: LyricsProvider {
     func fetchLyrics(song: Song) async throws -> Lyrics? {
         // KuGou API requires specific parameters
         // Implementation simplified - full API requires keyword search + accesskey
-        print("⚠️ [KuGou] Provider not fully implemented (requires API key)")
+        dlog("⚠️ [KuGou] Provider not fully implemented (requires API key)")
         return nil
     }
 }
@@ -130,7 +130,7 @@ class YouTubeSubtitleProvider: LyricsProvider {
     func fetchLyrics(song: Song) async throws -> Lyrics? {
         // Fetch subtitle tracks from YouTube video
         // This requires parsing the player response for caption tracks
-        print("⚠️ [YouTube Subtitle] Provider not fully implemented")
+        dlog("⚠️ [YouTube Subtitle] Provider not fully implemented")
         return nil
     }
 }
@@ -145,7 +145,7 @@ class YouTubeNativeProvider: LyricsProvider {
     func fetchLyrics(song: Song) async throws -> Lyrics? {
         // YouTube Music has a browse endpoint for lyrics: browse?browseId=lyrics/{videoId}
         // This would require adding a new method to YouTubeMusic client
-        print("⚠️ [YouTube Native] Provider not fully implemented (requires InnerTube browse endpoint)")
+        dlog("⚠️ [YouTube Native] Provider not fully implemented (requires InnerTube browse endpoint)")
         return nil
     }
 }

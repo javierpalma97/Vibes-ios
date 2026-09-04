@@ -50,7 +50,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
         } catch {
-            print("Failed to set up audio session: \(error)")
+            dlog("Failed to set up audio session: \(error)")
         }
     }
 

@@ -76,7 +76,7 @@ struct BrowseView: View {
                 sections = result.sections
             }
         } catch {
-            print("❌ [Browse] Error loading content: \(error)")
+            dlog("❌ [Browse] Error loading content: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to load content"
             }
