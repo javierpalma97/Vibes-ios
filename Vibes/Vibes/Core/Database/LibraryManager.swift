@@ -223,7 +223,6 @@ class LibraryManager: ObservableObject {
             existing.title = ytAlbum.title
             existing.artistsText = ytAlbum.artists
             existing.thumbnailUrl = ytAlbum.thumbnailUrl
-            existing.dateModified = Date()
         } else {
             let album = Album(
                 id: ytAlbum.id,
@@ -256,7 +255,6 @@ class LibraryManager: ObservableObject {
         if let existing = existing {
             existing.name = ytArtist.name
             existing.thumbnailUrl = ytArtist.thumbnailUrl
-            existing.dateModified = Date()
         } else {
             let artist = Artist(
                 id: ytArtist.id,
