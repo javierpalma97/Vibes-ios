@@ -59,6 +59,16 @@ struct SearchResponse: Codable {
 
     struct Contents: Codable {
         let tabbedSearchResultsRenderer: TabbedSearchResultsRenderer?
+        let sectionListRenderer: SectionListRenderer?
+
+        struct SectionListRenderer: Codable {
+            let contents: [SectionContent]?
+
+            struct SectionContent: Codable {
+                let musicShelfRenderer: MusicShelfRenderer?
+                let musicCardShelfRenderer: MusicCardShelfRenderer?
+            }
+        }
 
         struct TabbedSearchResultsRenderer: Codable {
             let tabs: [Tab]?
@@ -71,15 +81,6 @@ struct SearchResponse: Codable {
 
                     struct Content: Codable {
                         let sectionListRenderer: SectionListRenderer?
-
-                        struct SectionListRenderer: Codable {
-                            let contents: [SectionContent]?
-
-                            struct SectionContent: Codable {
-                                let musicShelfRenderer: MusicShelfRenderer?
-                                let musicCardShelfRenderer: MusicCardShelfRenderer?
-                            }
-                        }
                     }
                 }
             }
