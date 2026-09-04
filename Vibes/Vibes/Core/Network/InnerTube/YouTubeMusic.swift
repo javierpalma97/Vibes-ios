@@ -1451,6 +1451,13 @@ class YouTubeMusic {
                         let pl = YTPlaylist(id: browseId, name: browseId, author: nil, thumbnailUrl: nil, songCount: rawList.count, playlistId: nil)
                         return (pl, rawList)
                     }
+                    // Vacío válido (promo "will show up here"): devolver vacío limpio,
+                    // no invalidResponse (la UI mostraría "failed to load").
+                    if isEmptyLibraryState(raw) {
+                        await MainActor.run { DebugLogger.shared.log("📀 \(browseId) vacío válido, devolviendo []") }
+                        let pl = YTPlaylist(id: browseId, name: browseId, author: nil, thumbnailUrl: nil, songCount: 0, playlistId: nil)
+                        return (pl, [])
+                    }
                 } catch {
                     await MainActor.run { DebugLogger.shared.log("❌ raw fallback \(browseId) \(error)") }
                 }
@@ -2806,6 +2813,18 @@ class YouTubeMusic {
             await MainActor.run { DebugLogger.shared.log("❌ tab continuation \(error)") }
         }
         return tiles
+    }
+
+    /// Estado vacío VÁLIDO de librería (promo "will show up here" / "No videos yet"):
+    /// la cuenta existe pero no tiene contenido. Devolver [] en vez de invalidResponse
+    /// para que la UI muestre vacío limpio y no "failed to load".
+    private func isEmptyLibraryState(_ root: [String: Any]) -> Bool {
+        var found = false
+        walk(root) { d in
+            if found { return }
+            if d["genericPromoRenderer"] != nil { found = true }
+        }
+        return found
     }
 
     /// musicTwoRowItemRenderer genérico → HomeItem (playlist VL/PL, álbum MPRE, artista UC).
