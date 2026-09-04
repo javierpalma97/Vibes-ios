@@ -330,6 +330,7 @@ class YouTubeMusic {
                 guard response.playabilityStatus?.status == "OK" else {
                     let reason = response.playabilityStatus?.reason ?? response.playabilityStatus?.status ?? "unknown"
                     print("⚠️ [YouTube API] Client \(clientType) not playable: \(reason)")
+                    await MainActor.run { DebugLogger.shared.log("⚠️ player \(clientType) no reproducible: \(reason)") }
                     if response.playabilityStatus?.status == "LOGIN_REQUIRED" {
                         lastError = InnerTubeError.authenticationExpired
                     }
@@ -351,11 +352,13 @@ class YouTubeMusic {
                         return (response, clientType)
                     } else {
                         print("⚠️ [YouTube API] Client \(clientType) has no usable formats")
+                        await MainActor.run { DebugLogger.shared.log("⚠️ player \(clientType) sin formatos usables") }
                     }
                 }
             } catch {
                 lastError = error
                 print("⚠️ [YouTube API] Client \(clientType) request failed: \(error)")
+                await MainActor.run { DebugLogger.shared.log("❌ player \(clientType) err=\(error)") }
                 continue
             }
         }
@@ -777,8 +780,10 @@ class YouTubeMusic {
                 let dict = try await client.makeRawRequest(endpoint: "browse", body: body, clientType: ctype, forceNoAuth: false)
                 let songsFound = rawSongs(dict).count
                 let playlistsFound = rawPlaylists(dict).count
-                await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6)) songs=\(songsFound) playlists=\(playlistsFound)") }
-                if songsFound == 0 && playlistsFound == 0 {
+                let albumsFound = rawAlbums(dict).count
+                let artistsFound = rawArtists(dict).count
+                await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6)) songs=\(songsFound) playlists=\(playlistsFound) albums=\(albumsFound) artists=\(artistsFound)") }
+                if songsFound == 0 && playlistsFound == 0 && albumsFound == 0 && artistsFound == 0 {
                     // Vacío (shell TV, sign-in prompt...): probar siguiente cliente en vez
                     // de devolver vacío. Se guarda el primero por si todos dan vacío.
                     if firstDict == nil { firstDict = dict }
@@ -1432,19 +1437,65 @@ class YouTubeMusic {
         )
 
         var songs: [YTSong] = []
+        var continuationToken: String? = nil
 
         if let sections = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents {
             for section in sections {
-                if let shelfContents = section.musicPlaylistShelfRenderer?.contents {
-                    for content in shelfContents {
-                        if let item = content.musicResponsiveListItemRenderer,
-                           let song = parseSearchItem(item) {
-                            if case .song(let ytSong) = song {
-                                songs.append(ytSong)
+                if let shelf = section.musicPlaylistShelfRenderer {
+                    if let shelfContents = shelf.contents {
+                        for content in shelfContents {
+                            if let contItem = content.continuationItemRenderer {
+                                continuationToken = contItem.continuationEndpoint?.continuationCommand?.token ?? continuationToken
+                            } else if let item = content.musicResponsiveListItemRenderer,
+                               let song = parseSearchItem(item) {
+                                if case .song(let ytSong) = song {
+                                    songs.append(ytSong)
+                                }
                             }
                         }
                     }
+                    if continuationToken == nil {
+                        continuationToken = shelf.continuations?.first?.nextContinuationData?.continuation
+                    }
                 }
+            }
+        }
+
+        // Listas grandes (Top 100): página 1 trae token y pocos/sin items → seguir páginas.
+        // Best-effort: ante error se conservan las canciones ya parseadas.
+        while let token = continuationToken {
+            do {
+                let contResp: BrowseResponse = try await client.makeContinuationRequest(
+                    endpoint: "browse", continuation: token, clientType: .webRemix,
+                    forceNoAuth: !client.isAuthenticated, responseType: BrowseResponse.self
+                )
+                var items: [MusicPlaylistShelfRenderer.Content] = []
+                if let sectionList = contResp.continuationContents?.sectionListContinuation,
+                   let sections = sectionList.contents {
+                    for section in sections {
+                        if let contents = section.musicPlaylistShelfRenderer?.contents {
+                            items.append(contentsOf: contents)
+                        }
+                    }
+                }
+                if let actions = contResp.onResponseReceivedActions?.first?.appendContinuationItemsAction?.continuationItems {
+                    items.append(contentsOf: actions)
+                }
+                if items.isEmpty { continuationToken = nil; break }
+                var nextToken: String? = nil
+                for item in items {
+                    if let contItem = item.continuationItemRenderer {
+                        nextToken = contItem.continuationEndpoint?.continuationCommand?.token
+                    } else if let renderer = item.musicResponsiveListItemRenderer,
+                       let song = parseSearchItem(renderer), case .song(let ytSong) = song {
+                        songs.append(ytSong)
+                    }
+                }
+                continuationToken = nextToken
+                await MainActor.run { DebugLogger.shared.log("📄 continuación \(browseId) songs=\(songs.count)") }
+            } catch {
+                await MainActor.run { DebugLogger.shared.log("⚠️ continuación \(browseId) fin/error: \(error)") }
+                break
             }
         }
 
@@ -1479,6 +1530,29 @@ class YouTubeMusic {
                 }
             } catch {
                 await MainActor.run { DebugLogger.shared.log("❌ raw fallback2 \(browseId) \(error)") }
+            }
+        }
+
+        // IDs públicos con sesión Bearer: el raw autenticado falla (400s) y la lista
+        // quedaría gris/vacía. Último recurso: raw PÚBLICO sin auth.
+        if songsWithThumbnails.isEmpty {
+            let isPrivateId = browseId == "VLLM" || browseId.hasPrefix("FEmusic_")
+            if !isPrivateId {
+                do {
+                    let raw = try await client.makeRawRequest(
+                        endpoint: "browse", body: ["browseId": browseId],
+                        clientType: .webRemix, forceNoAuth: true
+                    )
+                    let rawList = rawSongs(raw)
+                    await MainActor.run { DebugLogger.shared.log("📀 raw fallback3 público \(browseId) songs=\(rawList.count)") }
+                    if !rawList.isEmpty {
+                        songsWithThumbnails = rawList.map { s in
+                            YTSong(id: s.id, title: s.title, artists: s.artists, duration: s.duration, thumbnailUrl: s.thumbnailUrl ?? playlistThumbnail, albumId: s.albumId, albumName: s.albumName)
+                        }
+                    }
+                } catch {
+                    await MainActor.run { DebugLogger.shared.log("❌ raw fallback3 \(browseId) \(error)") }
+                }
             }
         }
 
@@ -2255,10 +2329,9 @@ class YouTubeMusic {
 
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_albums")
-            let rawLists = rawPlaylists(raw)
-            return rawLists.map { pl in
-                YTAlbum(id: pl.id, title: pl.name, artists: pl.author ?? "", year: nil, thumbnailUrl: pl.thumbnailUrl)
-            }
+            let albums = rawAlbums(raw)
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryAlbums rawAlbums=\(albums.count)") }
+            return albums
         } catch {
             return []
         }
@@ -2271,10 +2344,9 @@ class YouTubeMusic {
 
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_library_corpus_artists")
-            let rawLists = rawPlaylists(raw)
-            return rawLists.map { pl in
-                YTArtist(id: pl.id, name: pl.name, thumbnailUrl: pl.thumbnailUrl)
-            }
+            let artists = rawArtists(raw)
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryArtists rawArtists=\(artists.count)") }
+            return artists
         } catch {
             return []
         }
@@ -2454,6 +2526,41 @@ class YouTubeMusic {
             }
         }
         return sections
+    }
+
+    /// Álbumes (browseId MPRE*) de cualquier shape TV/WEB.
+    private func rawAlbums(_ root: [String: Any]) -> [YTAlbum] {
+        var out: [YTAlbum] = []
+        var seen = Set<String>()
+        walk(root) { d in
+            guard let nav = d["navigationEndpoint"] as? [String: Any],
+                  let be = nav["browseEndpoint"] as? [String: Any],
+                  let bid = be["browseId"] as? String, bid.hasPrefix("MPRE") else { return }
+            let title = rawTexts(d["title"]).joined()
+            guard !title.isEmpty, !seen.contains(bid) else { return }
+            seen.insert(bid)
+            let artists = rawTexts(d["subtitle"]).joined(separator: " ")
+            let thumb = rawThumb(d["thumbnailRenderer"]) ?? rawThumb(d["thumbnail"])
+            out.append(YTAlbum(id: bid, title: title, artists: artists, year: nil, thumbnailUrl: thumb))
+        }
+        return out
+    }
+
+    /// Artistas (browseId UC*) de cualquier shape TV/WEB.
+    private func rawArtists(_ root: [String: Any]) -> [YTArtist] {
+        var out: [YTArtist] = []
+        var seen = Set<String>()
+        walk(root) { d in
+            guard let nav = d["navigationEndpoint"] as? [String: Any],
+                  let be = nav["browseEndpoint"] as? [String: Any],
+                  let bid = be["browseId"] as? String, bid.hasPrefix("UC") else { return }
+            let name = rawTexts(d["title"]).joined()
+            guard !name.isEmpty, !seen.contains(bid) else { return }
+            seen.insert(bid)
+            let thumb = rawThumb(d["thumbnailRenderer"]) ?? rawThumb(d["thumbnail"])
+            out.append(YTArtist(id: bid, name: name, thumbnailUrl: thumb))
+        }
+        return out
     }
 
     /// musicTwoRowItemRenderer genérico → HomeItem (playlist VL/PL, álbum MPRE, artista UC).
