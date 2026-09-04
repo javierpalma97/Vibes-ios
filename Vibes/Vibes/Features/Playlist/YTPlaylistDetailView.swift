@@ -110,6 +110,7 @@ struct YTPlaylistDetailView: View {
 
         do {
             print("🎵 [Playlist] Loading playlist: \(ytPlaylist.id)")
+            await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist start id=\(ytPlaylist.id) nombre=\(ytPlaylist.name)") }
 
             // Check if this is a radio/mix playlist
             if let playlistId = ytPlaylist.playlistId {
@@ -130,6 +131,7 @@ struct YTPlaylistDetailView: View {
                 let (_, fetchedSongs) = try await ytMusic.getPlaylist(browseId: browseId)
                 songs = fetchedSongs
                 print("🎵 [Playlist] Loaded \(songs.count) songs")
+                await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist OK id=\(ytPlaylist.id) songs=\(songs.count)") }
                 // Persistir el conteo para que la lista muestre N canciones sin reabrir
                 if !songs.isEmpty {
                     let updated = YTPlaylist(
@@ -145,6 +147,7 @@ struct YTPlaylistDetailView: View {
             }
         } catch {
             print("❌ [Playlist] Error loading playlist: \(error)")
+            await MainActor.run { DebugLogger.shared.log("❌ detalle playlist id=\(ytPlaylist.id) err=\(error)") }
             errorMessage = "Failed to load playlist"
         }
 

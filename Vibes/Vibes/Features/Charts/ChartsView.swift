@@ -56,13 +56,16 @@ struct ChartsView: View {
         errorMessage = nil
 
         do {
+            await MainActor.run { DebugLogger.shared.log("📊 charts vista: cargando...") }
             let page = try await ytMusic.getCharts()
             await MainActor.run {
+                DebugLogger.shared.log("📊 charts vista: OK sections=\(page.sections.count)")
                 chartsPage = page
             }
         } catch {
             print("❌ [Charts] Error loading charts: \(error)")
             await MainActor.run {
+                DebugLogger.shared.log("❌ charts vista err=\(error)")
                 errorMessage = "Failed to load charts"
             }
         }
