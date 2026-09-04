@@ -2208,7 +2208,7 @@ class YouTubeMusic {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_albums")
             let rawLists = rawPlaylists(raw)
             return rawLists.map { pl in
-                YTAlbum(id: pl.id, title: pl.name, artists: pl.author ?? "", thumbnailUrl: pl.thumbnailUrl, year: nil)
+                YTAlbum(id: pl.id, title: pl.name, artists: pl.author ?? "", year: nil, thumbnailUrl: pl.thumbnailUrl)
             }
         } catch {
             return []
