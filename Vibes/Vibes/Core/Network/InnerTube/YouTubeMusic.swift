@@ -716,6 +716,12 @@ class YouTubeMusic {
                     lastErr = InnerTubeError.authenticationExpired
                     continue
                 }
+                // Ensure the response contains actual media items; if empty, try next client
+                if resp.contents == nil {
+                    await MainActor.run { DebugLogger.shared.log("⚠️ browseAuth \(browseId) via \(ctype) returned empty result, trying next client") }
+                    lastErr = InnerTubeError.authenticationExpired
+                    continue
+                }
                 await MainActor.run { DebugLogger.shared.log("📚 browseAuth \(browseId) OK via \(ctype)") }
                 return resp
             } catch let e as URLError where e.code == .cancelled {
