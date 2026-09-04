@@ -399,7 +399,7 @@ class PlayerManager: NSObject, ObservableObject {
     func stop() {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
-        playerState = .stopped
+        playerState = .idle
         currentSong = nil
         currentTime = 0
         duration = 0
