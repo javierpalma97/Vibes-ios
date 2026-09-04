@@ -783,16 +783,18 @@ class YouTubeMusic {
                 let albumsFound = rawAlbums(dict).count
                 let artistsFound = rawArtists(dict).count
                 await MainActor.run { DebugLogger.shared.log("📚 rawAuth \(browseId) OK via \(ctype) keys=\(dict.keys.sorted().prefix(6)) songs=\(songsFound) playlists=\(playlistsFound) albums=\(albumsFound) artists=\(artistsFound)") }
+                // Muestra SIEMPRE (1500 chars): los casos mixtos (p.ej. playlists=4 pero
+                // albums=0) son los que necesitan diagnóstico y antes quedaban sin dump.
+                if let data = try? JSONSerialization.data(withJSONObject: dict),
+                   let sample = String(data: data, encoding: .utf8) {
+                    await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) sample=\(sample.prefix(1500))") }
+                }
                 if songsFound == 0 && playlistsFound == 0 && albumsFound == 0 && artistsFound == 0 {
                     // Vacío (shell TV, sign-in prompt...): probar siguiente cliente en vez
                     // de devolver vacío. Se guarda el primero por si todos dan vacío.
                     if firstDict == nil { firstDict = dict }
                     let keys2 = Self.deepKeys(dict, depth: 8)
                     await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) deepKeys=\(keys2.prefix(40))") }
-                    if let data = try? JSONSerialization.data(withJSONObject: dict),
-                       let sample = String(data: data, encoding: .utf8) {
-                        await MainActor.run { DebugLogger.shared.log("🔍 rawAuth \(browseId) sample=\(sample.prefix(1500))") }
-                    }
                     continue
                 }
                 return dict
@@ -2345,7 +2347,7 @@ class YouTubeMusic {
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_playlists")
             let rawLists = rawPlaylists(raw)
-            await MainActor.run { DebugLogger.shared.log("📚 raw parsed \(rawLists.count) playlists") }
+            await MainActor.run { DebugLogger.shared.log("📚 raw parsed \(rawLists.count) playlists names=\(rawLists.prefix(6).map { $0.name })") }
             if !rawLists.isEmpty { return rawLists }
         } catch {
             await MainActor.run { DebugLogger.shared.log("❌ raw FEmusic_liked_playlists \(error)") }
@@ -2361,7 +2363,7 @@ class YouTubeMusic {
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_liked_albums")
             let albums = rawAlbums(raw)
-            await MainActor.run { DebugLogger.shared.log("📀 getLibraryAlbums rawAlbums=\(albums.count)") }
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryAlbums rawAlbums=\(albums.count) names=\(albums.prefix(6).map { $0.title })") }
             return albums
         } catch {
             return []
@@ -2376,7 +2378,7 @@ class YouTubeMusic {
         do {
             let raw = try await browseRawAuthenticated(browseId: "FEmusic_library_corpus_artists")
             let artists = rawArtists(raw)
-            await MainActor.run { DebugLogger.shared.log("📀 getLibraryArtists rawArtists=\(artists.count)") }
+            await MainActor.run { DebugLogger.shared.log("📀 getLibraryArtists rawArtists=\(artists.count) names=\(artists.prefix(6).map { $0.name })") }
             return artists
         } catch {
             return []
