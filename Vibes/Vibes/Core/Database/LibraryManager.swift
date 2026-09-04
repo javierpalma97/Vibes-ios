@@ -623,7 +623,7 @@ class LibraryManager: ObservableObject {
                 var songs: [Song] = []
                 dlog("📋 [LibraryManager] Saving \(ytSongs.count) songs to database")
                 for (index, ytSong) in ytSongs.enumerated() {
-                    await saveSong(ytSong)
+                    await saveSong(ytSong, skipReload: true)
                     if let song = await getSong(id: ytSong.id) {
                         songs.append(song)
 

@@ -104,19 +104,33 @@ class DownloadManager: NSObject, ObservableObject {
 
         activeDownloads[song.id] = .downloading(progress: 0)
 
-        do {
-            // Get stream URL with content length and client type
-            let (streamUrl, contentLength, clientType) = try await ytMusic.getStreamUrlForDownload(videoId: song.id)
+        var attempts = 0
+        var lastError: Error?
 
-            guard let url = URL(string: streamUrl) else {
-                throw DownloadError.invalidURL
+        while attempts < 3 {
+            attempts += 1
+            do {
+                // Get stream URL with content length and client type
+                let (streamUrl, contentLength, clientType) = try await ytMusic.getStreamUrlForDownload(videoId: song.id)
+
+                guard let url = URL(string: streamUrl) else {
+                    throw DownloadError.invalidURL
+                }
+
+                // Use chunked download via Range header
+                try await performChunkedDownload(songId: song.id, url: url, contentLength: contentLength, clientType: clientType)
+                return // Success
+            } catch {
+                lastError = error
+                dlog("⚠️ [Download] Attempt \(attempts)/3 failed for \(song.id): \(error)")
+                if attempts < 3 {
+                    try? await Task.sleep(nanoseconds: UInt64(attempts) * 1_000_000_000)
+                }
             }
+        }
 
-            // Use chunked download via Range header (googlevideo rejects full &range query with 403)
-            try await performChunkedDownload(songId: song.id, url: url, contentLength: contentLength, clientType: clientType)
-
-        } catch {
-            dlog("❌ [Download] Failed for \(song.id): \(error)")
+        if let error = lastError {
+            dlog("❌ [Download] All 3 attempts failed for \(song.id): \(error)")
             activeDownloads[song.id] = .failed(error: error.localizedDescription)
         }
     }

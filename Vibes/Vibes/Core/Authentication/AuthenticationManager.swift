@@ -36,11 +36,46 @@ class AuthenticationManager: ObservableObject {
         isAuthenticated = innerTube.isAuthenticated
 
         if isAuthenticated {
-            accountName = UserDefaults.standard.string(forKey: "accountName") ?? (OAuthManager.isAuthenticatedSync ? "YouTube (OAuth)" : nil)
+            accountName = UserDefaults.standard.string(forKey: "accountName") ?? (OAuthManager.isAuthenticatedSync ? "Cuenta de YouTube" : nil)
             accountEmail = UserDefaults.standard.string(forKey: "accountEmail")
             accountImageUrl = UserDefaults.standard.string(forKey: "accountImageUrl")
+            Task {
+                await fetchGoogleUserInfo()
+            }
         } else {
             // No limpiar nombre aquí, solo estado
+        }
+    }
+
+    func fetchGoogleUserInfo() async {
+        guard let bearer = OAuthManager.bearerHeaderSync else { return }
+        guard let url = URL(string: "https://www.googleapis.com/oauth2/v3/userinfo") else { return }
+        var req = URLRequest(url: url)
+        req.setValue(bearer, forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let name = json["name"] as? String ?? json["given_name"] as? String
+                let email = json["email"] as? String
+                let picture = json["picture"] as? String
+                await MainActor.run {
+                    if let name = name, !name.isEmpty {
+                        self.accountName = name
+                        UserDefaults.standard.set(name, forKey: "accountName")
+                    }
+                    if let email = email, !email.isEmpty {
+                        self.accountEmail = email
+                        UserDefaults.standard.set(email, forKey: "accountEmail")
+                    }
+                    if let picture = picture, !picture.isEmpty {
+                        self.accountImageUrl = picture
+                        UserDefaults.standard.set(picture, forKey: "accountImageUrl")
+                    }
+                }
+            }
+        } catch {
+            dlog("⚠️ [Auth] Failed to fetch Google user info: \(error)")
         }
     }
 

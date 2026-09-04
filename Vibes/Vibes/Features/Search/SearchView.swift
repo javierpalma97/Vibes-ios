@@ -88,19 +88,36 @@ struct SearchView: View {
         }
     }
 
+    @State private var searchTask: Task<Void, Never>?
+
     private func performSearch() {
-        guard !searchQuery.isEmpty else { return }
+        searchTask?.cancel()
+        guard !searchQuery.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
 
         isSearching = true
 
-        Task {
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Task.isCancelled { return }
+
             do {
-                searchResults = try await ytMusic.search(query: searchQuery, filter: selectedFilter)
-                libraryManager.addSearchHistory(query: searchQuery)
+                let results = try await ytMusic.search(query: searchQuery, filter: selectedFilter)
+                if !Task.isCancelled {
+                    searchResults = results
+                    libraryManager.addSearchHistory(query: searchQuery)
+                }
             } catch {
-                dlog("Search failed: \(error)")
+                if !Task.isCancelled {
+                    dlog("Search failed: \(error)")
+                }
             }
-            isSearching = false
+            if !Task.isCancelled {
+                isSearching = false
+            }
         }
     }
 

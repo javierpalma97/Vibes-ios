@@ -117,6 +117,24 @@ class YouTubeMusic {
             body["params"] = filter.params
         }
 
+        // Try unauthenticated webRemix search first (public & reliable)
+        do {
+            let response = try await client.makeRequest(
+                endpoint: "search",
+                body: body,
+                clientType: .webRemix,
+                forceNoAuth: true,
+                responseType: SearchResponse.self
+            )
+            let results = parseSearchResults(response)
+            if !results.isEmpty {
+                return results
+            }
+        } catch {
+            dlog("⚠️ [Search] Public search failed: \(error)")
+        }
+
+        // Fallback with default client
         let response = try await client.makeRequest(
             endpoint: "search",
             body: body,
@@ -127,8 +145,10 @@ class YouTubeMusic {
     }
 
     private func parseSearchResults(_ response: SearchResponse) -> [SearchResult] {
-        guard let tabs = response.contents?.tabbedSearchResultsRenderer?.tabs,
-              let sections = tabs.first?.tabRenderer?.content?.sectionListRenderer?.contents else {
+        let sections = response.contents?.tabbedSearchResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents
+            ?? response.contents?.sectionListRenderer?.contents
+
+        guard let sections = sections else {
             return []
         }
 
@@ -1728,14 +1748,31 @@ class YouTubeMusic {
         var genres: [MoodAndGenre] = []
 
         for section in sectionContents {
-            if let gridRenderer = section.gridRenderer {
-                if let items = gridRenderer.items {
-                    for item in items {
-                        if let navButton = item.musicNavigationButtonRenderer {
-                            let title = navButton.buttonText?.combined ?? ""
-                            let browseId = navButton.clickCommand?.browseEndpoint?.browseId
-                            let params = navButton.clickCommand?.browseEndpoint?.params
+            if let gridRenderer = section.gridRenderer, let items = gridRenderer.items {
+                for item in items {
+                    if let navButton = item.musicNavigationButtonRenderer {
+                        let title = navButton.buttonText?.combined ?? ""
+                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId
+                        let params = navButton.clickCommand?.browseEndpoint?.params
 
+                        if !title.isEmpty {
+                            genres.append(MoodAndGenre(
+                                id: browseId ?? UUID().uuidString,
+                                title: title,
+                                params: params,
+                                color: nil
+                            ))
+                        }
+                    }
+                }
+            } else if let carouselShelf = section.musicCarouselShelfRenderer, let contents = carouselShelf.contents {
+                for content in contents {
+                    if let navButton = content.musicNavigationButtonRenderer {
+                        let title = navButton.buttonText?.combined ?? ""
+                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId
+                        let params = navButton.clickCommand?.browseEndpoint?.params
+
+                        if !title.isEmpty {
                             genres.append(MoodAndGenre(
                                 id: browseId ?? UUID().uuidString,
                                 title: title,
@@ -2460,12 +2497,22 @@ class YouTubeMusic {
             "target": ["videoId": videoId]
         ]
 
-        let _: EmptyResponse = try await client.makeRequest(
-            endpoint: "like/like",
-            body: body,
-            clientType: .webRemix,
-            responseType: EmptyResponse.self
-        )
+        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        var lastError: Error?
+        for ctype in clients {
+            do {
+                let _: EmptyResponse = try await client.makeRequest(
+                    endpoint: "like/like",
+                    body: body,
+                    clientType: ctype,
+                    responseType: EmptyResponse.self
+                )
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        if let error = lastError { throw error }
     }
 
     func unlikeSong(videoId: String) async throws {
@@ -2477,12 +2524,22 @@ class YouTubeMusic {
             "target": ["videoId": videoId]
         ]
 
-        let _: EmptyResponse = try await client.makeRequest(
-            endpoint: "like/removelike",
-            body: body,
-            clientType: .webRemix,
-            responseType: EmptyResponse.self
-        )
+        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        var lastError: Error?
+        for ctype in clients {
+            do {
+                let _: EmptyResponse = try await client.makeRequest(
+                    endpoint: "like/removelike",
+                    body: body,
+                    clientType: ctype,
+                    responseType: EmptyResponse.self
+                )
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        if let error = lastError { throw error }
     }
 
     func addSongToPlaylist(playlistId: String, videoId: String) async throws {
@@ -2501,12 +2558,22 @@ class YouTubeMusic {
             ]
         ]
 
-        let _: EmptyResponse = try await client.makeRequest(
-            endpoint: "browse/edit_playlist",
-            body: body,
-            clientType: .webRemix,
-            responseType: EmptyResponse.self
-        )
+        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        var lastError: Error?
+        for ctype in clients {
+            do {
+                let _: EmptyResponse = try await client.makeRequest(
+                    endpoint: "browse/edit_playlist",
+                    body: body,
+                    clientType: ctype,
+                    responseType: EmptyResponse.self
+                )
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        if let error = lastError { throw error }
     }
 
     func createPlaylist(title: String, description: String? = nil, videoIds: [String] = []) async throws -> String? {
@@ -2529,14 +2596,23 @@ class YouTubeMusic {
             let playlistId: String?
         }
 
-        let response: CreatePlaylistResponse = try await client.makeRequest(
-            endpoint: "playlist/create",
-            body: body,
-            clientType: .webRemix,
-            responseType: CreatePlaylistResponse.self
-        )
-
-        return response.playlistId
+        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        var lastError: Error?
+        for ctype in clients {
+            do {
+                let response: CreatePlaylistResponse = try await client.makeRequest(
+                    endpoint: "playlist/create",
+                    body: body,
+                    clientType: ctype,
+                    responseType: CreatePlaylistResponse.self
+                )
+                return response.playlistId
+            } catch {
+                lastError = error
+            }
+        }
+        if let error = lastError { throw error }
+        return nil
     }
 
     // MARK: - Music History

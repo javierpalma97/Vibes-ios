@@ -155,14 +155,14 @@ struct VibesTabBar: View {
                     }
                     .foregroundColor(selection == tab ? VibesColors.accent : VibesColors.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, 6)
-        .padding(.bottom, 18)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
         .background(VibesColors.card.ignoresSafeArea(edges: .bottom))
     }
 }
