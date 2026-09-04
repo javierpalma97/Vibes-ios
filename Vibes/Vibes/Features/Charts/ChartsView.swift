@@ -56,7 +56,6 @@ struct ChartsView: View {
             await loadCharts()
         }
     }
-    }
 
     private func loadCharts() async {
         isLoading = true
