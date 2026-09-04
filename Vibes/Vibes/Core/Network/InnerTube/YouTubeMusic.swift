@@ -2528,8 +2528,15 @@ class YouTubeMusic {
     // MARK: - Charts
 
     func getCharts() async throws -> ChartsPage {
-        let response = try await browseWithParams(browseId: "FEmusic_charts", params: "ggMGCgQIgAQ%3D")
+        let response: BrowseResponse
+        do {
+            response = try await browseWithParams(browseId: "FEmusic_charts", params: "ggMGCgQIgAQ%3D")
+        } catch {
+            await MainActor.run { DebugLogger.shared.log("❌ charts browse falló: \(error)") }
+            throw error
+        }
         let page = parseChartsPage(response)
+        await MainActor.run { DebugLogger.shared.log("📊 charts tipado sections=\(page.sections.count)") }
         if !page.sections.isEmpty { return page }
         // La vista Charts muestra BLANCO sin error cuando sections=[]: la forma del
         // response cambió. Fallback con parseo genérico del JSON crudo.
