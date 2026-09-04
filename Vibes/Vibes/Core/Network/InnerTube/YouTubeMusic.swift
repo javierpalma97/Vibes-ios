@@ -909,6 +909,8 @@ class YouTubeMusic {
 
             guard let bid = browseId else { return }
             if bid == "FEmusic_liked_playlists" || bid == "FEmusic_history" || bid == "FEmusic_explore" { return }
+            // Filter out navigation tabs and internal browse IDs (not actual playlists)
+            if bid.hasPrefix("FEmusic_") { return }
 
             // Playlist IDs start with VL, PL, MPSP, RD, UC, VLLM, or SE or length != 11
             let isPlaylist = bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "SE" || bid.hasPrefix("RD") || bid.count != 11
@@ -2497,7 +2499,20 @@ class YouTubeMusic {
             "target": ["videoId": videoId]
         ]
 
-        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        // Like/playlist mutations are YouTube Music web-specific endpoints.
+        // TV client doesn't support them. webRemix + Bearer = 400 systematically.
+        // With Bearer (OAuth): webCreator first, then webRemix as last resort.
+        // With cookies: webRemix first (SAPISIDHASH), then webCreator.
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
+        let hasCookies = client.cookies != nil
+        let clients: [InnerTubeClientType]
+        if hasBearer && !hasCookies {
+            clients = [.webCreator, .androidMusic]
+        } else if hasBearer && hasCookies {
+            clients = [.webRemix, .webCreator, .androidMusic]
+        } else {
+            clients = [.webRemix, .webCreator]
+        }
         var lastError: Error?
         for ctype in clients {
             do {
@@ -2524,7 +2539,16 @@ class YouTubeMusic {
             "target": ["videoId": videoId]
         ]
 
-        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
+        let hasCookies = client.cookies != nil
+        let clients: [InnerTubeClientType]
+        if hasBearer && !hasCookies {
+            clients = [.webCreator, .androidMusic]
+        } else if hasBearer && hasCookies {
+            clients = [.webRemix, .webCreator, .androidMusic]
+        } else {
+            clients = [.webRemix, .webCreator]
+        }
         var lastError: Error?
         for ctype in clients {
             do {
@@ -2558,7 +2582,16 @@ class YouTubeMusic {
             ]
         ]
 
-        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
+        let hasCookies = client.cookies != nil
+        let clients: [InnerTubeClientType]
+        if hasBearer && !hasCookies {
+            clients = [.webCreator, .androidMusic]
+        } else if hasBearer && hasCookies {
+            clients = [.webRemix, .webCreator, .androidMusic]
+        } else {
+            clients = [.webRemix, .webCreator]
+        }
         var lastError: Error?
         for ctype in clients {
             do {
@@ -2596,7 +2629,16 @@ class YouTubeMusic {
             let playlistId: String?
         }
 
-        let clients: [InnerTubeClientType] = OAuthManager.bearerHeaderSync != nil ? [.tv, .webRemix] : [.webRemix, .tv]
+        let hasBearer = OAuthManager.bearerHeaderSync != nil
+        let hasCookies = client.cookies != nil
+        let clients: [InnerTubeClientType]
+        if hasBearer && !hasCookies {
+            clients = [.webCreator, .androidMusic]
+        } else if hasBearer && hasCookies {
+            clients = [.webRemix, .webCreator, .androidMusic]
+        } else {
+            clients = [.webRemix, .webCreator]
+        }
         var lastError: Error?
         for ctype in clients {
             do {

@@ -12,5 +12,7 @@
 		<string>group.com.vibes.app</string>
 	</array>
 	-->
+	<key>com.apple.developer.carplay-audio</key>
+	<true/>
 </dict>
 </plist>
