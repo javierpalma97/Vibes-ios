@@ -109,7 +109,7 @@ final class YouTubeDataAPI {
             }
             await MainActor.run { DebugLogger.shared.log("❌ [DataAPI] \(method) \(path) → \(msg)") }
             if code == 403 && (msg.contains("has not been used") || msg.contains("disabled")) {
-                UserDefaults.standard.set(true, forKey: disabledKey)
+                UserDefaults.standard.set(true, forKey: Self.disabledKey)
                 await MainActor.run { DebugLogger.shared.log("⛔️ [DataAPI] Deshabilitada en el proyecto OAuth: no se reintentará. Cloud solo vía sesión web.") }
             }
             throw YouTubeDataError.http(code, msg)

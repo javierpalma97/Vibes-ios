@@ -79,14 +79,14 @@ struct CookieLoginView: View {
         do {
             let visitor = try await authManager.extractVisitorData(from: webView)
             let dataSyncId = (try? await authManager.extractDataSyncId(from: webView)) ?? ""
-            let info = try? await authManager.extractAccountInfo(from: webView)
+            let info: (name: String?, email: String?) = (try? await authManager.extractAccountInfo(from: webView)) ?? (nil, nil)
             await MainActor.run {
                 authManager.saveAuthData(
                     cookies: cookies,
                     visitorData: visitor,
                     dataSyncId: dataSyncId,
-                    name: info?.name,
-                    email: info?.email
+                    name: info.name,
+                    email: info.email
                 )
                 dlog("✅ [Auth] Web session connected")
                 onDone()

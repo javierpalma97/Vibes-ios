@@ -839,13 +839,14 @@ class LibraryManager: ObservableObject {
                 try await runCloudTask(task)
                 saveOutbox(tasks)
                 DebugLogger.shared.log("☁️ [Outbox] OK \(task.kind.rawValue) \(task.videoId)")
-            } catch is OutboxNoRoute {
-                // Sin ruta cloud posible: aparcar SIN gastar intentos (no es un fallo)
-                tasks.append(task)
-                saveOutbox(tasks)
-                DebugLogger.shared.log("☁️ [Outbox] Sin ruta cloud: \(task.kind.rawValue) \(task.videoId) aparcada")
-                return
             } catch {
+                if error is OutboxNoRoute {
+                    // Sin ruta cloud posible: aparcar SIN gastar intentos (no es un fallo)
+                    tasks.append(task)
+                    saveOutbox(tasks)
+                    DebugLogger.shared.log("☁️ [Outbox] Sin ruta cloud: \(task.kind.rawValue) \(task.videoId) aparcada")
+                    return
+                }
                 var failed = task
                 failed.attempts += 1
                 if failed.attempts >= outboxMaxAttempts {
