@@ -52,6 +52,10 @@ class AuthenticationManager: ObservableObject {
     /// Si falla, cae a userinfo de Google.
     func fetchYouTubeChannel() async {
         guard OAuthManager.bearerHeaderSync != nil else { return }
+        guard !YouTubeDataAPI.isDisabled else {
+            await fetchGoogleUserInfo()
+            return
+        }
         do {
             let channel = try await YouTubeDataAPI.shared.getMyChannel()
             await MainActor.run {

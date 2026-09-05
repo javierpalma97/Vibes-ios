@@ -78,6 +78,10 @@ struct MoodAndGenresView: View {
                 sections = fetchedSections
             }
         } catch {
+            if error is CancellationError {
+                await MainActor.run { isLoading = false }
+                return
+            }
             dlog("❌ [Genres] Error loading mood & genres: \(error)")
             await MainActor.run {
                 errorMessage = "Error al cargar géneros y estados de ánimo"

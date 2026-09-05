@@ -1856,6 +1856,7 @@ class YouTubeMusic {
         }
 
         var result: [MoodSection] = []
+        var seenTitles = Set<String>()
 
         for (sectionIdx, section) in sectionContents.enumerated() {
             if let gridRenderer = section.gridRenderer, let items = gridRenderer.items {
@@ -1870,7 +1871,11 @@ class YouTubeMusic {
 
                         if !title.isEmpty {
                             let uniqueId = "\(browseId)_\(params ?? "")_\(title)"
-                            if !sectionItems.contains(where: { $0.id == uniqueId }) {
+                            let titleKey = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            // Dedup global por título: el mismo género sale en varias
+                            // secciones y a veces repetido en una ("Chill" × N).
+                            if !seenTitles.contains(titleKey) && !sectionItems.contains(where: { $0.id == uniqueId }) {
+                                seenTitles.insert(titleKey)
                                 sectionItems.append(MoodAndGenre(
                                     id: uniqueId,
                                     title: title,
@@ -1897,7 +1902,11 @@ class YouTubeMusic {
 
                         if !title.isEmpty {
                             let uniqueId = "\(browseId)_\(params ?? "")_\(title)"
-                            if !sectionItems.contains(where: { $0.id == uniqueId }) {
+                            let titleKey = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            // Dedup global por título: el mismo género sale en varias
+                            // secciones y a veces repetido en una ("Chill" × N).
+                            if !seenTitles.contains(titleKey) && !sectionItems.contains(where: { $0.id == uniqueId }) {
+                                seenTitles.insert(titleKey)
                                 sectionItems.append(MoodAndGenre(
                                     id: uniqueId,
                                     title: title,

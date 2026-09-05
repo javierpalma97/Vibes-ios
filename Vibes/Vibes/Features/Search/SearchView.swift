@@ -421,39 +421,39 @@ struct SearchSongRow: View {
         .contextMenu {
             if let song = song {
                 Button(action: { queueManager.insertNext(song) }) {
-                    Label("Play Next", systemImage: "text.insert")
+                    Label("Reproducir siguiente", systemImage: "text.insert")
                 }
 
                 Button(action: { queueManager.addToQueue(song) }) {
-                    Label("Add to Queue", systemImage: "text.append")
+                    Label("Añadir a la cola", systemImage: "text.append")
                 }
 
                 Divider()
 
                 Button(action: { downloadSong() }) {
                     if DownloadManager.shared.isDownloaded(song.id) {
-                        Label("Remove Download", systemImage: "trash")
+                        Label("Eliminar descarga", systemImage: "trash")
                     } else {
-                        Label("Download", systemImage: "arrow.down.circle")
+                        Label("Descargar", systemImage: "arrow.down.circle")
                     }
                 }
 
                 Button(action: { showAddToPlaylist = true }) {
-                    Label("Add to Playlist", systemImage: "plus.rectangle.on.folder")
+                    Label("Añadir a playlist", systemImage: "plus.rectangle.on.folder")
                 }
 
                 Button(action: { toggleLike() }) {
                     if song.liked {
-                        Label("Remove from Liked", systemImage: "heart.slash")
+                        Label("Quitar de Me gusta", systemImage: "heart.slash")
                     } else {
-                        Label("Add to Liked", systemImage: "heart")
+                        Label("Añadir a Me gusta", systemImage: "heart")
                     }
                 }
 
                 Divider()
 
                 Button(action: { showShareSheet = true }) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    Label("Compartir", systemImage: "square.and.arrow.up")
                 }
             }
         }

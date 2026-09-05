@@ -65,10 +65,20 @@ struct PendingCloudTask: Codable {
     let createdAt: Date
 }
 
+/// Sin ruta cloud posible (ni Data API ni sesión web): aparcar sin gastar intentos.
+struct OutboxNoRoute: Error {}
+
 final class YouTubeDataAPI {
     static let shared = YouTubeDataAPI()
     private let base = "https://www.googleapis.com/youtube/v3"
+    private static let disabledKey = "ytDataApiDisabled"
     private init() {}
+
+    /// El cliente OAuth público de TV (861556708454) no tiene Data API habilitada
+    /// y Google no permite habilitarla: cuando se detecta el 403 se deja de intentar.
+    static var isDisabled: Bool {
+        UserDefaults.standard.bool(forKey: disabledKey)
+    }
 
     // MARK: - HTTP
 
@@ -98,6 +108,10 @@ final class YouTubeDataAPI {
                 msg = "HTTP \(code): \(detail)"
             }
             await MainActor.run { DebugLogger.shared.log("❌ [DataAPI] \(method) \(path) → \(msg)") }
+            if code == 403 && (msg.contains("has not been used") || msg.contains("disabled")) {
+                UserDefaults.standard.set(true, forKey: disabledKey)
+                await MainActor.run { DebugLogger.shared.log("⛔️ [DataAPI] Deshabilitada en el proyecto OAuth: no se reintentará. Cloud solo vía sesión web.") }
+            }
             throw YouTubeDataError.http(code, msg)
         }
         if data.isEmpty { return [String: Any]() }

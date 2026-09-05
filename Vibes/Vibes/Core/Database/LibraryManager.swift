@@ -155,7 +155,9 @@ class LibraryManager: ObservableObject {
         await MainActor.run { DebugLogger.shared.log("🔄 sync start isAuth=\(InnerTubeClient.shared.isAuthenticated) \(InnerTubeClient.shared.debugAuthState)") }
         // Vaciar primero la pool de tareas pendientes (likes/añadidos en espera)
         await pumpOutbox()
-        if OAuthManager.bearerHeaderSync != nil {
+        if YouTubeDataAPI.isDisabled {
+            DebugLogger.shared.log("⛔️ [LibraryManager] Data API off en este proyecto OAuth: cloud SOLO vía sesión web (Login → Conectar sesión web). Sin ella, todo queda local.")
+        } else if OAuthManager.bearerHeaderSync != nil {
             DebugLogger.shared.log("☁️ [LibraryManager] Cloud ON (Data API): Me gusta y playlists se sincronizan.")
         } else if InnerTubeClient.shared.hasCookieAuth {
             DebugLogger.shared.log("☁️ [LibraryManager] Cloud parcial (sesión web): se intentará por InnerTube.")
@@ -168,7 +170,7 @@ class LibraryManager: ObservableObject {
             await MainActor.run { DebugLogger.shared.log("📥 getLikedSongs start") }
             var ytLikedSongs: [YTSong] = []
             var likedVia = "innerTube"
-            if OAuthManager.bearerHeaderSync != nil {
+            if OAuthManager.bearerHeaderSync != nil, !YouTubeDataAPI.isDisabled {
                 do {
                     let items = try await YouTubeDataAPI.shared.getLikedItems()
                     ytLikedSongs = items.map {
@@ -221,7 +223,7 @@ class LibraryManager: ObservableObject {
             }
             // Data API: listas propias con conteos REALES (itemCount). Gana a TV y
             // rellena lo que TV no trae. Merge (no sustituye: TV aporta guardadas).
-            if OAuthManager.bearerHeaderSync != nil {
+            if OAuthManager.bearerHeaderSync != nil, !YouTubeDataAPI.isDisabled {
                 do {
                     let cloud = try await YouTubeDataAPI.shared.getMyPlaylists()
                     for cp in cloud {
@@ -837,6 +839,12 @@ class LibraryManager: ObservableObject {
                 try await runCloudTask(task)
                 saveOutbox(tasks)
                 DebugLogger.shared.log("☁️ [Outbox] OK \(task.kind.rawValue) \(task.videoId)")
+            } catch is OutboxNoRoute {
+                // Sin ruta cloud posible: aparcar SIN gastar intentos (no es un fallo)
+                tasks.append(task)
+                saveOutbox(tasks)
+                DebugLogger.shared.log("☁️ [Outbox] Sin ruta cloud: \(task.kind.rawValue) \(task.videoId) aparcada")
+                return
             } catch {
                 var failed = task
                 failed.attempts += 1
@@ -857,6 +865,25 @@ class LibraryManager: ObservableObject {
     }
 
     private func runCloudTask(_ task: PendingCloudTask) async throws {
+        // Data API deshabilitada en este proyecto OAuth: única ruta, sesión web.
+        if YouTubeDataAPI.isDisabled {
+            guard InnerTubeClient.shared.hasCookieAuth else { throw OutboxNoRoute() }
+            switch task.kind {
+            case .like:
+                if task.liked == true {
+                    try await ytMusic.likeSong(videoId: task.videoId)
+                } else {
+                    try await ytMusic.unlikeSong(videoId: task.videoId)
+                }
+            case .playlistAdd:
+                guard let playlistId = task.playlistId else { throw YouTubeDataError.badResponse("sin playlist") }
+                try await ytMusic.addSongToPlaylist(playlistId: playlistId, videoId: task.videoId)
+            case .playlistRemove:
+                // InnerTube no puede quitar sin setVideoId: aparcada hasta Data API
+                throw OutboxNoRoute()
+            }
+            return
+        }
         switch task.kind {
         case .like:
             try await YouTubeDataAPI.shared.rateVideo(id: task.videoId, rating: task.liked == true ? .like : .none)

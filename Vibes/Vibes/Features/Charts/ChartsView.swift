@@ -69,6 +69,10 @@ struct ChartsView: View {
                 chartsPage = page
             }
         } catch {
+            if error is CancellationError {
+                await MainActor.run { isLoading = false }
+                return
+            }
             dlog("❌ [Charts] Error loading charts: \(error)")
             await MainActor.run {
                 DebugLogger.shared.log("❌ charts vista err=\(error)")
