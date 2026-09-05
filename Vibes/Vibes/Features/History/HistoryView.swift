@@ -16,7 +16,7 @@ struct HistoryView: View {
             LazyVStack(alignment: .leading, spacing: 24) {
                 if !libraryManager.recentlyPlayed.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Recently Played")
+                        Text("Escuchadas recientemente")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
@@ -64,7 +64,7 @@ struct HistoryView: View {
                             .foregroundColor(VibesColors.textSecondary)
                             .multilineTextAlignment(.center)
 
-                        Button("Retry") {
+                        Button("Reintentar") {
                             Task {
                                 await loadHistory()
                             }

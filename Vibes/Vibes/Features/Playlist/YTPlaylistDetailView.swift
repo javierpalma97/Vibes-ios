@@ -25,7 +25,7 @@ struct YTPlaylistDetailView: View {
                         }) {
                             HStack {
                                 Image(systemName: "play.fill")
-                                Text("Play")
+                                Text("Reproducir")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -42,7 +42,7 @@ struct YTPlaylistDetailView: View {
                         }) {
                             HStack {
                                 Image(systemName: "shuffle")
-                                Text("Shuffle")
+                                Text("Aleatorio")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -62,7 +62,7 @@ struct YTPlaylistDetailView: View {
                         HStack {
                             Spacer()
                             Image(systemName: "arrow.down.circle")
-                            Text("Download All")
+                            Text("Descargar todo")
                             Spacer()
                         }
                         .foregroundColor(VibesColors.accent)
@@ -155,17 +155,11 @@ struct YTPlaylistDetailView: View {
                 songs = fetchedSongs
                 dlog("🎵 [Playlist] Loaded \(songs.count) songs")
                 await MainActor.run { DebugLogger.shared.log("🎵 detalle playlist OK id=\(ytPlaylist.id) songs=\(songs.count)") }
-                // Persistir el conteo para que la lista muestre N canciones sin reabrir
+                // Persistir el conteo SOLO si la lista ya existe en la biblioteca.
+                // Crear la fila aquí metía charts ajenos (Trending, Daily Top...)
+                // en "mis listas" por el simple hecho de abrirlos.
                 if !songs.isEmpty {
-                    let updated = YTPlaylist(
-                        id: ytPlaylist.id,
-                        name: ytPlaylist.name,
-                        author: ytPlaylist.author,
-                        thumbnailUrl: ytPlaylist.thumbnailUrl,
-                        songCount: songs.count,
-                        playlistId: ytPlaylist.playlistId
-                    )
-                    await libraryManager.savePlaylist(updated)
+                    await libraryManager.updatePlaylistCount(playlistId: ytPlaylist.id, songCount: songs.count)
                 }
             }
         } catch {

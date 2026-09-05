@@ -349,58 +349,70 @@ struct PlayerMenuContent: View {
     @StateObject private var downloadManager = DownloadManager.shared
     @EnvironmentObject var queueManager: QueueManager
     @EnvironmentObject var libraryManager: LibraryManager
+    @State private var showAddToPlaylist = false
 
     var body: some View {
-        if downloadManager.isDownloaded(song.id) {
-            Button(role: .destructive) {
-                downloadManager.deleteDownload(songId: song.id)
-            } label: {
-                Label("Remove Download", systemImage: "trash")
+        Group {
+            if downloadManager.isDownloaded(song.id) {
+                Button(role: .destructive) {
+                    downloadManager.deleteDownload(songId: song.id)
+                } label: {
+                    Label("Eliminar descarga", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    Task {
+                        await downloadManager.download(song: song)
+                    }
+                } label: {
+                    Label("Descargar", systemImage: "arrow.down.circle")
+                }
             }
-        } else {
+
+            Divider()
+
+            Button {
+                queueManager.insertNext(song)
+            } label: {
+                Label("Reproducir siguiente", systemImage: "text.insert")
+            }
+
+            Button {
+                queueManager.addToQueue(song)
+            } label: {
+                Label("Añadir a la cola", systemImage: "text.append")
+            }
+
+            Divider()
+
+            Button {
+                showAddToPlaylist = true
+            } label: {
+                Label("Añadir a playlist", systemImage: "plus.rectangle.on.folder")
+            }
+
             Button {
                 Task {
-                    await downloadManager.download(song: song)
+                    await libraryManager.toggleLike(song: song)
                 }
             } label: {
-                Label("Download", systemImage: "arrow.down.circle")
+                if song.liked {
+                    Label("Quitar de Me gusta", systemImage: "heart.slash")
+                } else {
+                    Label("Añadir a Me gusta", systemImage: "heart")
+                }
+            }
+
+            Divider()
+
+            if let url = URL(string: "https://music.youtube.com/watch?v=\(song.id)") {
+                ShareLink(item: url) {
+                    Label("Compartir", systemImage: "square.and.arrow.up")
+                }
             }
         }
-
-        Divider()
-
-        Button {
-            queueManager.insertNext(song)
-        } label: {
-            Label("Play Next", systemImage: "text.insert")
-        }
-
-        Button {
-            queueManager.addToQueue(song)
-        } label: {
-            Label("Add to Queue", systemImage: "text.append")
-        }
-
-        Divider()
-
-        Button {
-            Task {
-                await libraryManager.toggleLike(song: song)
-            }
-        } label: {
-            if song.liked {
-                Label("Remove from Liked", systemImage: "heart.slash")
-            } else {
-                Label("Add to Liked", systemImage: "heart")
-            }
-        }
-
-        Divider()
-
-        if let url = URL(string: "https://music.youtube.com/watch?v=\(song.id)") {
-            ShareLink(item: url) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
+        .sheet(isPresented: $showAddToPlaylist) {
+            AddToPlaylistSheet(song: song)
         }
     }
 }

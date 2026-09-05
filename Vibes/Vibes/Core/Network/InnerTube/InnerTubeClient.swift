@@ -268,8 +268,8 @@ class InnerTubeClient {
             client: InnerTubeContext.ClientInfo(
                 clientName: clientName,
                 clientVersion: clientVersion,
-                gl: "US",
-                hl: "en",
+                gl: "ES",
+                hl: "es",
                 visitorData: contextVisitor,
                 deviceMake: deviceMake,
                 deviceModel: deviceModel,
@@ -336,6 +336,7 @@ class InnerTubeClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("es-ES,es;q=0.9", forHTTPHeaderField: "Accept-Language")
 
         // Headers EXACTOS de InnerTune-Android (z-huang/InnerTune InnerTube.kt):
         // - x-origin siempre, Referer SOLO para WEB_REMIX/WEB_CREATOR, SIN Origin, SIN X-Goog-AuthUser/Visitor-Id.
@@ -384,10 +385,23 @@ class InnerTubeClient {
             return true
         }()
         let effectiveIsAuth = !forceNoAuth && isAuthenticated
-        // OAuth2 Bearer tiene prioridad sobre SAPISIDHASH (MusicBot #1670 / youtube-source#33)
-        // PERO igual que cookies: nunca para player ANDROID/IOS (esos van sin auth y con 403 si llevan Bearer).
-        // Tu log: oauth player android/ios/webRemix Bearer → luego 403/400. Player debe ser android sin Bearer.
-        if !forceNoAuth, shouldSendAuth, let bearer = OAuthManager.bearerHeaderSync {
+        // Flujo oficial web (verificado por MITM contra music.youtube.com):
+        // WEB_REMIX/WEB_CREATOR/WEB autentican lecturas Y mutaciones (like,
+        // edit_playlist) con `Authorization: SAPISIDHASH ...` + Cookie
+        // (+ X-Goog-AuthUser: 0), NUNCA con Bearer. Bearer en estos clientes da
+        // HTTP 400 sistemático en like/edit_playlist. TV usa Bearer.
+        // Por eso SAPISIDHASH tiene prioridad en clientes web cuando hay cookies.
+        // Player ANDROID/IOS/VISIONOS sigue yendo sin auth (403 con auth rancia).
+        let useCookieAuth = !forceNoAuth && shouldSendAuth
+            && (clientType == .webRemix || clientType == .webCreator || clientType == .web)
+            && hasCookieAuth
+        if useCookieAuth, let cookies = cookies, let sapisidHash = generateSAPISIDHASH() {
+            request.setValue(cookies, forHTTPHeaderField: "Cookie")
+            request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
+            request.setValue(sapisidHash, forHTTPHeaderField: "Authorization")
+            Task { @MainActor in DebugLogger.shared.log("🔑 cookie \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))") }
+            dlog("🔑 [Auth] \(endpoint) \(clientType) CookieLen=\(cookies.count) SAPISIDHASH=\(sapisidHash.prefix(30))")
+        } else if !forceNoAuth, shouldSendAuth, let bearer = OAuthManager.bearerHeaderSync {
             request.setValue(bearer, forHTTPHeaderField: "Authorization")
             // Para OAuth, no mandamos Cookie SAPISIDHASH, solo Bearer + visitorData
             Task { @MainActor in DebugLogger.shared.log("🔑 oauth \(endpoint) \(clientType) Bearer=\(bearer.prefix(30))") }

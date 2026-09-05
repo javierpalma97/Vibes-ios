@@ -28,7 +28,7 @@ struct LikedSongsPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Play")
+                            Text("Reproducir")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -45,7 +45,7 @@ struct LikedSongsPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "shuffle")
-                            Text("Shuffle")
+                            Text("Aleatorio")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -68,7 +68,7 @@ struct LikedSongsPlaylistView: View {
                     HStack {
                         Spacer()
                         Image(systemName: "arrow.down.circle")
-                        Text("Download All")
+                        Text("Descargar todo")
                         Spacer()
                     }
                     .foregroundColor(.accentColor)
@@ -85,10 +85,10 @@ struct LikedSongsPlaylistView: View {
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
 
-                        Text("No liked songs")
+                        Text("Sin me gustas")
                             .font(.headline)
 
-                        Text("Like songs to see them here")
+                        Text("Marca Me gusta para verlas aquí")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -141,7 +141,7 @@ struct TopSongsPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Play")
+                            Text("Reproducir")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -158,7 +158,7 @@ struct TopSongsPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "shuffle")
-                            Text("Shuffle")
+                            Text("Aleatorio")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -181,7 +181,7 @@ struct TopSongsPlaylistView: View {
                     HStack {
                         Spacer()
                         Image(systemName: "arrow.down.circle")
-                        Text("Download All")
+                        Text("Descargar todo")
                         Spacer()
                     }
                     .foregroundColor(.accentColor)
@@ -197,10 +197,10 @@ struct TopSongsPlaylistView: View {
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
 
-                        Text("No top songs")
+                        Text("Sin top de canciones")
                             .font(.headline)
 
-                        Text("Play songs to see your most played tracks here")
+                        Text("Reproduce para ver tus más escuchadas")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -292,7 +292,7 @@ struct DownloadedPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Play")
+                            Text("Reproducir")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -309,7 +309,7 @@ struct DownloadedPlaylistView: View {
                     }) {
                         HStack {
                             Image(systemName: "shuffle")
-                            Text("Shuffle")
+                            Text("Aleatorio")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -332,10 +332,10 @@ struct DownloadedPlaylistView: View {
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
 
-                        Text("No downloaded songs")
+                        Text("Sin descargas")
                             .font(.headline)
 
-                        Text("Download songs to listen offline")
+                        Text("Descarga canciones para escuchar sin conexión")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

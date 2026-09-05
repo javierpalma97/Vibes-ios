@@ -22,6 +22,9 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         self.interfaceController = interfaceController
         interfaceController.delegate = self
 
+        dlog("🚗 [CarPlay] didConnect")
+        Task { @MainActor in DebugLogger.shared.log("🚗 [CarPlay] didConnect") }
+
         // Set up root template
         Task { @MainActor in
             let rootTemplate = await createRootTemplate()
@@ -36,6 +39,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         _ templateApplicationScene: CPTemplateApplicationScene,
         didDisconnectInterfaceController interfaceController: CPInterfaceController
     ) {
+        dlog("🚗 [CarPlay] didDisconnect")
+        Task { @MainActor in DebugLogger.shared.log("🚗 [CarPlay] didDisconnect") }
         self.interfaceController = nil
         cancellables.removeAll()
     }
@@ -62,18 +67,23 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     @MainActor
     private func createRootTemplate() async -> CPTabBarTemplate {
         let libraryTab = await createLibraryTemplate()
+        libraryTab.tabTitle = "Library"
         libraryTab.tabImage = UIImage(systemName: "music.note.list")
 
         let browseTab = await createBrowseTemplate()
+        browseTab.tabTitle = "Browse"
         browseTab.tabImage = UIImage(systemName: "safari")
 
         let playlistsTab = await createPlaylistsTemplate()
+        playlistsTab.tabTitle = "Playlists"
         playlistsTab.tabImage = UIImage(systemName: "square.stack.fill")
 
         let downloadsTab = await createDownloadsTemplate()
+        downloadsTab.tabTitle = "Downloads"
         downloadsTab.tabImage = UIImage(systemName: "arrow.down.circle")
 
         let nowPlayingTab = CPNowPlayingTemplate.shared
+        nowPlayingTab.tabTitle = "Now Playing"
         nowPlayingTab.tabImage = UIImage(systemName: "play.fill")
 
         // Configure now playing template buttons

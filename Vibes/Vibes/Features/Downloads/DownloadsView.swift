@@ -26,7 +26,7 @@ struct DownloadsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Downloads")
+                        Text("Descargas")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
@@ -60,7 +60,7 @@ struct DownloadsView: View {
                         }) {
                             HStack {
                                 Image(systemName: "play.fill")
-                                Text("Play")
+                                Text("Reproducir")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -77,7 +77,7 @@ struct DownloadsView: View {
                         }) {
                             HStack {
                                 Image(systemName: "shuffle")
-                                Text("Shuffle")
+                                Text("Aleatorio")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -93,7 +93,7 @@ struct DownloadsView: View {
                 // Active downloads
                 if !downloadingSongs.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Downloading")
+                        Text("Descargando")
                             .font(.headline)
                             .foregroundColor(VibesColors.textPrimary)
                             .padding(.horizontal)
@@ -141,7 +141,7 @@ struct DownloadsView: View {
 
                 // Downloaded songs
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Downloaded")
+                    Text("Descargadas")
                         .font(.headline)
                         .foregroundColor(VibesColors.textPrimary)
                         .padding(.horizontal)
@@ -188,18 +188,18 @@ struct DownloadsView: View {
             }
         }
         .vibesBackground()
-        .navigationTitle("Downloads")
+        .navigationTitle("Descargas")
         .navigationBarTitleDisplayMode(.large)
-        .confirmationDialog("Delete all downloads?", isPresented: $showDeleteAllConfirmation, titleVisibility: .visible) {
-            Button("Delete all", role: .destructive) {
+        .confirmationDialog("¿Eliminar todas las descargas?", isPresented: $showDeleteAllConfirmation, titleVisibility: .visible) {
+            Button("Eliminar todas", role: .destructive) {
                 downloadManager.deleteAllDownloads()
                 Task {
                     await loadDownloadedSongs()
                 }
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancelar", role: .cancel) { }
         } message: {
-            Text("This will remove \(downloadedSongs.count) downloaded songs from your device.")
+            Text("Se eliminarán \(downloadedSongs.count) canciones descargadas de tu dispositivo.")
         }
         .task {
             await loadDownloadedSongs()

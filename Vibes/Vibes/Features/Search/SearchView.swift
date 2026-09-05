@@ -63,7 +63,7 @@ struct SearchView: View {
                         performSearch()
                     })
                 } else if searchResults.isEmpty {
-                    Text("No results found")
+                    Text("Sin resultados")
                         .foregroundColor(VibesColors.textSecondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -312,14 +312,14 @@ struct SearchHistoryView: View {
                 if !libraryManager.searchHistory.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Recent Searches")
+                            Text("Búsquedas recientes")
                                 .font(.title3)
                                 .fontWeight(.bold)
                                 .foregroundColor(VibesColors.textPrimary)
 
                             Spacer()
 
-                            Button("Clear") {
+                            Button("Borrar") {
                                 libraryManager.clearSearchHistory()
                             }
                             .font(.caption)
@@ -349,7 +349,7 @@ struct SearchHistoryView: View {
 
                 if !libraryManager.recentlyPlayed.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Recently Played")
+                        Text("Escuchadas recientemente")
                             .font(.title3)
                             .fontWeight(.bold)
                             .foregroundColor(VibesColors.textPrimary)
@@ -404,7 +404,7 @@ struct SearchSongRow: View {
                         .foregroundColor(VibesColors.textSecondary)
                         .lineLimit(1)
 
-                    Text("Song")
+                    Text("Canción")
                         .font(.caption2)
                         .foregroundColor(VibesColors.textTertiary)
                 }

@@ -40,7 +40,7 @@ struct SleepTimerView: View {
                                 .foregroundColor(.purple)
 
                             VStack(alignment: .leading) {
-                                Text("Sleep timer active")
+                                Text("Temporizador activo")
                                     .font(.headline)
 
                                 Text(sleepTimer.formattedRemainingTime)
@@ -50,7 +50,7 @@ struct SleepTimerView: View {
 
                             Spacer()
 
-                            Button("Cancel") {
+                            Button("Cancelar") {
                                 sleepTimer.stopTimer()
                             }
                             .foregroundColor(.red)
@@ -58,7 +58,7 @@ struct SleepTimerView: View {
                     }
                 }
 
-                Section(header: Text("Set Timer")) {
+                Section(header: Text("Temporizador")) {
                     ForEach(SleepTimerDuration.allCases) { duration in
                         Button(action: {
                             sleepTimer.startTimer(duration: duration)
@@ -81,11 +81,11 @@ struct SleepTimerView: View {
                     }
                 }
             }
-            .navigationTitle("Sleep Timer")
+            .navigationTitle("Temporizador")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                    Button("Listo") {
                         dismiss()
                     }
                 }

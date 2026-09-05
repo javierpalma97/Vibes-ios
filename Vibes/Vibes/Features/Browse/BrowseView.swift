@@ -29,7 +29,7 @@ struct BrowseView: View {
                     Text(error)
                         .foregroundColor(VibesColors.textSecondary)
 
-                    Button("Retry") {
+                    Button("Reintentar") {
                         Task {
                             await loadContent()
                         }

@@ -15,24 +15,24 @@ struct SongContextMenu: View {
     var body: some View {
         Group {
             Button(action: onPlayNext) {
-                Label("Play Next", systemImage: "text.insert")
+                Label("Reproducir siguiente", systemImage: "text.insert")
             }
 
             Button(action: onAddToQueue) {
-                Label("Add to Queue", systemImage: "text.append")
+                Label("Añadir a la cola", systemImage: "text.append")
             }
 
             Divider()
 
             Button(action: onAddToPlaylist) {
-                Label("Add to Playlist", systemImage: "plus.rectangle.on.folder")
+                Label("Añadir a playlist", systemImage: "plus.rectangle.on.folder")
             }
 
             Button(action: onToggleLike) {
                 if song.liked {
-                    Label("Remove from Liked", systemImage: "heart.slash")
+                    Label("Quitar de Me gusta", systemImage: "heart.slash")
                 } else {
-                    Label("Add to Liked", systemImage: "heart")
+                    Label("Añadir a Me gusta", systemImage: "heart")
                 }
             }
 
@@ -40,20 +40,20 @@ struct SongContextMenu: View {
 
             if song.artistsText != nil {
                 Button(action: onGoToArtist) {
-                    Label("Go to Artist", systemImage: "person")
+                    Label("Ir al artista", systemImage: "person")
                 }
             }
 
             if song.albumName != nil {
                 Button(action: onGoToAlbum) {
-                    Label("Go to Album", systemImage: "square.stack")
+                    Label("Ir al álbum", systemImage: "square.stack")
                 }
             }
 
             Divider()
 
             Button(action: onShare) {
-                Label("Share", systemImage: "square.and.arrow.up")
+                Label("Compartir", systemImage: "square.and.arrow.up")
             }
         }
     }
@@ -74,11 +74,11 @@ struct SongContextMenuModifier: ViewModifier {
         content
             .contextMenu {
                 Button(action: playNext) {
-                    Label("Play Next", systemImage: "text.insert")
+                    Label("Reproducir siguiente", systemImage: "text.insert")
                 }
 
                 Button(action: addToQueue) {
-                    Label("Add to Queue", systemImage: "text.append")
+                    Label("Añadir a la cola", systemImage: "text.append")
                 }
 
                 Divider()
@@ -86,30 +86,30 @@ struct SongContextMenuModifier: ViewModifier {
                 // Download option
                 if downloadManager.isDownloaded(song.id) {
                     Button(role: .destructive, action: deleteDownload) {
-                        Label("Remove Download", systemImage: "trash")
+                        Label("Eliminar descarga", systemImage: "trash")
                     }
                 } else {
                     Button(action: download) {
-                        Label("Download", systemImage: "arrow.down.circle")
+                        Label("Descargar", systemImage: "arrow.down.circle")
                     }
                 }
 
                 Button(action: { showAddToPlaylist = true }) {
-                    Label("Add to Playlist", systemImage: "plus.rectangle.on.folder")
+                    Label("Añadir a playlist", systemImage: "plus.rectangle.on.folder")
                 }
 
                 Button(action: toggleLike) {
                     if song.liked {
-                        Label("Remove from Liked", systemImage: "heart.slash")
+                        Label("Quitar de Me gusta", systemImage: "heart.slash")
                     } else {
-                        Label("Add to Liked", systemImage: "heart")
+                        Label("Añadir a Me gusta", systemImage: "heart")
                     }
                 }
 
                 Divider()
 
                 Button(action: { showShareSheet = true }) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    Label("Compartir", systemImage: "square.and.arrow.up")
                 }
             }
             .sheet(isPresented: $showAddToPlaylist) {
@@ -166,7 +166,7 @@ struct AddToPlaylistSheet: View {
         NavigationStack {
             List {
                 Button(action: { showCreatePlaylist = true }) {
-                    Label("Create New Playlist", systemImage: "plus")
+                    Label("Crear lista nueva", systemImage: "plus")
                 }
 
                 ForEach(libraryManager.playlists) { playlist in
@@ -192,11 +192,11 @@ struct AddToPlaylistSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add to Playlist")
+            .navigationTitle("Añadir a playlist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("Cancelar") {
                         dismiss()
                     }
                 }
@@ -231,19 +231,19 @@ struct CreatePlaylistWithSongSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Playlist Name", text: $playlistName)
+                TextField("Nombre de la lista", text: $playlistName)
             }
-            .navigationTitle("New Playlist")
+            .navigationTitle("Nueva lista")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("Cancelar") {
                         dismiss()
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button("Crear") {
                         createPlaylist()
                     }
                     .disabled(playlistName.isEmpty)

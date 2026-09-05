@@ -30,7 +30,7 @@ struct ArtistDetailView: View {
                     VStack(spacing: 14) {
                         Text(error)
                             .foregroundColor(VibesColors.textSecondary)
-                        Button("Retry") {
+                        Button("Reintentar") {
                             Task {
                                 await loadArtist()
                             }
@@ -175,7 +175,7 @@ struct ArtistHeader: View {
                 Button(action: onShuffle) {
                     HStack {
                         Image(systemName: "shuffle")
-                        Text("Shuffle")
+                        Text("Aleatorio")
                     }
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
@@ -223,7 +223,7 @@ struct ArtistSectionView: View {
                 Spacer()
 
                 if section.browseId != nil {
-                    Text("See all")
+                    Text("Ver todo")
                         .font(.subheadline)
                         .foregroundColor(VibesColors.accent)
                 }

@@ -16,9 +16,9 @@ class AuthenticationManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        // Login por cookies (WebView/SAPISID) retirado: solo OAuth2. Se limpian
-        // restos de sesiones cookie persistidas para no autenticar con ellas.
-        innerTube.clearAuthData()
+        // Conviven dos sesiones: OAuth2 (lecturas/biblioteca vía TV) y cookies web
+        // (mutaciones cloud vía WEB_REMIX+SAPISIDHASH: like, edit_playlist).
+        // NO borrar cookies al arrancar: sin ellas el Me gusta y el sync a listas fallan.
         loadAuthState()
         // OAuth login debe reflejarse en UI aunque no haya cookies (tu log: oauth ok pero sale como guest)
         NotificationCenter.default.publisher(for: NSNotification.Name("OAuthAuthChanged"))
@@ -41,10 +41,31 @@ class AuthenticationManager: ObservableObject {
             accountImageUrl = UserDefaults.standard.string(forKey: "accountImageUrl")
             Task {
                 await OAuthManager.shared.refreshIfNeeded()
-                await fetchGoogleUserInfo()
+                await fetchYouTubeChannel()
             }
         } else {
             // No limpiar nombre aquí, solo estado
+        }
+    }
+
+    /// Perfil real del canal (nombre + avatar) vía YouTube Data API v3.
+    /// Si falla, cae a userinfo de Google.
+    func fetchYouTubeChannel() async {
+        guard OAuthManager.bearerHeaderSync != nil else { return }
+        do {
+            let channel = try await YouTubeDataAPI.shared.getMyChannel()
+            await MainActor.run {
+                self.accountName = channel.title
+                UserDefaults.standard.set(channel.title, forKey: "accountName")
+                if let avatar = channel.avatarUrl, !avatar.isEmpty {
+                    self.accountImageUrl = avatar
+                    UserDefaults.standard.set(avatar, forKey: "accountImageUrl")
+                }
+            }
+            dlog("✅ [Auth] Canal: \(channel.title)")
+        } catch {
+            dlog("⚠️ [Auth] Canal DataAPI falló, probando userinfo: \(error)")
+            await fetchGoogleUserInfo()
         }
     }
 

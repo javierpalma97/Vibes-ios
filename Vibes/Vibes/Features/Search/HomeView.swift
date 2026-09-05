@@ -386,7 +386,7 @@ struct QuickPicksSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Quick Picks")
+                Text("Selección rápida")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)
@@ -398,7 +398,7 @@ struct QuickPicksSection: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "shuffle")
-                        Text("Shuffle")
+                        Text("Aleatorio")
                     }
                     .font(.subheadline)
                     .foregroundColor(VibesColors.accent)
@@ -448,7 +448,7 @@ struct RecentlyPlayedSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recently Played")
+            Text("Escuchadas recientemente")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(VibesColors.textPrimary)
@@ -588,7 +588,7 @@ struct MoodAndGenresSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Mood & Genres")
+                Text("Géneros y estados de ánimo")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)
@@ -596,7 +596,7 @@ struct MoodAndGenresSection: View {
                 Spacer()
 
                 NavigationLink(destination: MoodAndGenresView()) {
-                    Text("See all")
+                    Text("Ver todo")
                         .font(.subheadline)
                         .foregroundColor(VibesColors.accent)
                 }
@@ -690,7 +690,7 @@ struct ErrorView: View {
             Text(message)
                 .foregroundColor(VibesColors.textSecondary)
 
-            Button("Retry") {
+            Button("Reintentar") {
                 onRetry()
             }
             .buttonStyle(.borderedProminent)
@@ -794,7 +794,7 @@ struct ArtistCard: View {
                 .lineLimit(1)
                 .frame(width: 150, alignment: .leading)
 
-            Text("Artist")
+            Text("Artista")
                 .font(.caption)
                 .foregroundColor(VibesColors.textSecondary)
                 .frame(width: 150, alignment: .leading)

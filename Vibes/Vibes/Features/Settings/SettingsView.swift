@@ -323,7 +323,7 @@ struct DisclaimerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Disclaimer")
+                Text("Aviso legal")
                     .font(.title)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)
@@ -365,7 +365,7 @@ struct PrivacyView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Privacy Policy")
+                Text("Política de privacidad")
                     .font(.title)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)

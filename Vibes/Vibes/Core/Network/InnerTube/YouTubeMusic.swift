@@ -79,6 +79,43 @@ struct MoodAndGenre: Identifiable {
     let title: String
     let params: String?
     let color: String?
+
+    var browseId: String {
+        if id.contains("_") {
+            let parts = id.components(separatedBy: "_")
+            if parts.count >= 2 && (parts[0].hasPrefix("FE") || parts[0].hasPrefix("VL") || parts[0].hasPrefix("PL")) {
+                return parts[0]
+            }
+        }
+        return "FEmusic_moods_and_genres_category"
+    }
+}
+
+struct MoodSection: Identifiable {
+    let id: String
+    let title: String
+    let items: [MoodAndGenre]
+}
+
+// Títulos de sección que la API devuelve en inglés según el cliente (TV sobre
+// todo) → español. Con hl=es la web ya los trae traducidos; esto cubre el resto.
+func esSectionTitle(_ title: String) -> String {
+    switch title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "featured playlists for you": return "Playlists destacadas para ti"
+    case "new releases", "new releases for you": return "Novedades"
+    case "mood & genres", "moods & genres", "moods and genres", "mood and genres": return "Géneros y estados de ánimo"
+    case "charts": return "Listas de éxitos"
+    case "video charts", "top music videos", "music videos": return "Vídeos populares"
+    case "top artists": return "Artistas populares"
+    case "top songs": return "Canciones populares"
+    case "top albums": return "Álbumes populares"
+    case "trending", "trending songs": return "Tendencias"
+    case "quick picks": return "Selección rápida"
+    case "for you": return "Para ti"
+    case "moods & moments", "moods and moments": return "Estados de ánimo y momentos"
+    case "genres": return "Géneros"
+    default: return title
+    }
 }
 
 // MARK: - Audio Quality
@@ -912,8 +949,14 @@ class YouTubeMusic {
             // Filter out navigation tabs and internal browse IDs (not actual playlists)
             if bid.hasPrefix("FEmusic_") { return }
 
-            // Playlist IDs start with VL, PL, MPSP, RD, UC, VLLM, or SE or length != 11
-            let isPlaylist = bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid == "VLLM" || bid == "SE" || bid.hasPrefix("RD") || bid.count != 11
+            // VLLM/LM/SE son colecciones del sistema (Me gusta), NO playlists. Los
+            // likes se sincronizan vía getLikedSongs. Incluirlos aquí creaba la
+            // playlist fantasma "Liked Music" (id LM: stripVL("VLLM")) y rompía
+            // edit_playlist al intentar añadirle canciones.
+            if bid == "VLLM" || bid == "LM" || bid == "SE" { return }
+
+            // Playlist IDs start with VL, PL, MPSP, RD, UC, or length != 11
+            let isPlaylist = bid.hasPrefix("VL") || bid.hasPrefix("PL") || bid.hasPrefix("MPSP") || bid.hasPrefix("RD") || bid.count != 11
             guard isPlaylist else { return }
 
             var title = rawTexts(d["title"]).joined()
@@ -1721,12 +1764,17 @@ class YouTubeMusic {
                                 let params = navButton.clickCommand?.browseEndpoint?.params
                                 let navBrowseId = navButton.clickCommand?.browseEndpoint?.browseId
 
-                                moodAndGenres.append(MoodAndGenre(
-                                    id: navBrowseId ?? UUID().uuidString,
-                                    title: title,
-                                    params: params,
-                                    color: nil
-                                ))
+                                // Dedup por título: el carrusel puede traer el mismo
+                                // género repetido ("Chill" × N).
+                                let key = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                                if !title.isEmpty && !moodAndGenres.contains(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key }) {
+                                    moodAndGenres.append(MoodAndGenre(
+                                        id: navBrowseId ?? UUID().uuidString,
+                                        title: title,
+                                        params: params,
+                                        color: nil
+                                    ))
+                                }
                             }
                         }
                     }
@@ -1772,52 +1820,118 @@ class YouTubeMusic {
         return genres
     }
 
-    private func parseMoodAndGenres(_ response: BrowseResponse) -> [MoodAndGenre] {
+    func getMoodAndGenreSections() async throws -> [MoodSection] {
+        let response = try await browse(browseId: "FEmusic_moods_and_genres")
+        let sections = parseMoodAndGenreSections(response)
+        await MainActor.run { DebugLogger.shared.log("🎭 [Genres] Parsed \(sections.count) sections, \(sections.reduce(0) { $0 + $1.items.count }) genres") }
+        if !sections.isEmpty { return sections }
+
+        // Raw fallback: una sola sección con todo lo encontrado (dedup por título)
+        let raw = try await browseRawPublic(browseId: "FEmusic_moods_and_genres")
+        var items: [MoodAndGenre] = []
+        walk(raw) { d in
+            if let navBtn = d["musicNavigationButtonRenderer"] as? [String: Any] {
+                let title = rawTexts(navBtn["buttonText"]).joined()
+                var browseId: String?
+                var params: String?
+                if let cmd = navBtn["clickCommand"] as? [String: Any],
+                   let be = cmd["browseEndpoint"] as? [String: Any] {
+                    browseId = be["browseId"] as? String
+                    params = be["params"] as? String
+                }
+                let key = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !title.isEmpty && !items.contains(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key }) {
+                    items.append(MoodAndGenre(id: browseId ?? UUID().uuidString, title: title, params: params, color: nil))
+                }
+            }
+        }
+        await MainActor.run { DebugLogger.shared.log("🎭 [Genres] Raw fallback sections: \(items.count) genres") }
+        if items.isEmpty { return [] }
+        return [MoodSection(id: "sec_raw", title: "Géneros y estados de ánimo", items: items)]
+    }
+
+    private func parseMoodAndGenreSections(_ response: BrowseResponse) -> [MoodSection] {
         guard let sectionContents = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.first?.tabRenderer?.content?.sectionListRenderer?.contents else {
             return []
         }
 
-        var genres: [MoodAndGenre] = []
+        var result: [MoodSection] = []
 
-        for section in sectionContents {
+        for (sectionIdx, section) in sectionContents.enumerated() {
             if let gridRenderer = section.gridRenderer, let items = gridRenderer.items {
+                let sectionTitle = gridRenderer.header?.gridHeaderRenderer?.title?.combined ?? "Sección \(sectionIdx + 1)"
+                var sectionItems: [MoodAndGenre] = []
+
                 for item in items {
                     if let navButton = item.musicNavigationButtonRenderer {
                         let title = navButton.buttonText?.combined ?? ""
-                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId
+                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId ?? "FEmusic_moods_and_genres_category"
                         let params = navButton.clickCommand?.browseEndpoint?.params
 
                         if !title.isEmpty {
-                            genres.append(MoodAndGenre(
-                                id: browseId ?? UUID().uuidString,
-                                title: title,
-                                params: params,
-                                color: nil
-                            ))
+                            let uniqueId = "\(browseId)_\(params ?? "")_\(title)"
+                            if !sectionItems.contains(where: { $0.id == uniqueId }) {
+                                sectionItems.append(MoodAndGenre(
+                                    id: uniqueId,
+                                    title: title,
+                                    params: params,
+                                    color: nil
+                                ))
+                            }
                         }
                     }
                 }
+
+                if !sectionItems.isEmpty {
+                    result.append(MoodSection(id: "sec_\(sectionIdx)_\(sectionTitle)", title: esSectionTitle(sectionTitle), items: sectionItems))
+                }
             } else if let carouselShelf = section.musicCarouselShelfRenderer, let contents = carouselShelf.contents {
+                let sectionTitle = carouselShelf.header?.musicCarouselShelfBasicHeaderRenderer?.title?.combined ?? "Sección \(sectionIdx + 1)"
+                var sectionItems: [MoodAndGenre] = []
+
                 for content in contents {
                     if let navButton = content.musicNavigationButtonRenderer {
                         let title = navButton.buttonText?.combined ?? ""
-                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId
+                        let browseId = navButton.clickCommand?.browseEndpoint?.browseId ?? "FEmusic_moods_and_genres_category"
                         let params = navButton.clickCommand?.browseEndpoint?.params
 
                         if !title.isEmpty {
-                            genres.append(MoodAndGenre(
-                                id: browseId ?? UUID().uuidString,
-                                title: title,
-                                params: params,
-                                color: nil
-                            ))
+                            let uniqueId = "\(browseId)_\(params ?? "")_\(title)"
+                            if !sectionItems.contains(where: { $0.id == uniqueId }) {
+                                sectionItems.append(MoodAndGenre(
+                                    id: uniqueId,
+                                    title: title,
+                                    params: params,
+                                    color: nil
+                                ))
+                            }
                         }
                     }
+                }
+
+                if !sectionItems.isEmpty {
+                    result.append(MoodSection(id: "sec_\(sectionIdx)_\(sectionTitle)", title: esSectionTitle(sectionTitle), items: sectionItems))
                 }
             }
         }
 
-        return genres
+        return result
+    }
+
+    private func parseMoodAndGenres(_ response: BrowseResponse) -> [MoodAndGenre] {
+        let sections = parseMoodAndGenreSections(response)
+        var allGenres: [MoodAndGenre] = []
+        for sec in sections {
+            for item in sec.items {
+                // Dedup por título (no por id): el mismo género puede venir en
+                // varias secciones o con distintos params ("Chill" × 9).
+                let key = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !allGenres.contains(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key }) {
+                    allGenres.append(item)
+                }
+            }
+        }
+        return allGenres
     }
 
     // MARK: - Artist Page
@@ -2057,7 +2171,7 @@ class YouTubeMusic {
 
         guard !items.isEmpty else { return nil }
 
-        return HomeSection(title: title, label: label, thumbnail: thumbnail, items: items, browseId: browseId)
+        return HomeSection(title: esSectionTitle(title), label: label, thumbnail: thumbnail, items: items, browseId: browseId)
     }
 
     private func parseHomeContinuation(_ response: BrowseResponse) -> HomePage {
@@ -2434,7 +2548,9 @@ class YouTubeMusic {
             // Tiles de la tab Playlists (ids VL/PL con título propio): fusionar sin duplicar
             let tiles = await rawTvTabTiles(raw, tabIds: ["FEmusic_liked_playlists"], titleHints: ["playlist"])
             for t in tiles {
-                guard let bid = t.browseId, (bid.hasPrefix("VL") || bid.hasPrefix("PL")) else { continue }
+                // OJO: "VLLM".hasPrefix("VL") == true: excluir el tile del sistema
+                // Me gusta o se crea la playlist fantasma "Liked Music" (id LM).
+                guard let bid = t.browseId, bid != "VLLM", (bid.hasPrefix("VL") || bid.hasPrefix("PL")) else { continue }
                 let pid = bid.hasPrefix("VL") ? stripVL(bid) : bid
                 if !merged.contains(where: { $0.id == pid }) {
                     merged.append(YTPlaylist(id: pid, name: t.title, author: t.subtitle.isEmpty ? nil : t.subtitle, thumbnailUrl: t.thumb, songCount: 0, playlistId: nil))
@@ -2534,7 +2650,7 @@ class YouTubeMusic {
         // With Bearer (OAuth): webCreator first, then webRemix as last resort.
         // With cookies: webRemix first (SAPISIDHASH), then webCreator.
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.hasCookies
+        let hasCookies = client.hasCookieAuth
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2570,7 +2686,7 @@ class YouTubeMusic {
         ]
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.hasCookies
+        let hasCookies = client.hasCookieAuth
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2613,7 +2729,7 @@ class YouTubeMusic {
         ]
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.hasCookies
+        let hasCookies = client.hasCookieAuth
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2660,7 +2776,7 @@ class YouTubeMusic {
         }
 
         let hasBearer = OAuthManager.bearerHeaderSync != nil
-        let hasCookies = client.hasCookies
+        let hasCookies = client.hasCookieAuth
         let clients: [InnerTubeClientType]
         if hasBearer && !hasCookies {
             clients = [.webCreator, .androidMusic]
@@ -2782,7 +2898,7 @@ class YouTubeMusic {
                 }
                 if !items.isEmpty {
                     let title = shelf.title?.combined ?? "Top songs"
-                    sections.append(ChartSection(title: title, items: items))
+                    sections.append(ChartSection(title: esSectionTitle(title), items: items))
                 }
             }
             if let carouselShelf = sectionContent.musicCarouselShelfRenderer {
@@ -2803,7 +2919,7 @@ class YouTubeMusic {
                 }
 
                 if !items.isEmpty {
-                    sections.append(ChartSection(title: title, items: items))
+                    sections.append(ChartSection(title: esSectionTitle(title), items: items))
                 }
             }
         }
@@ -2854,7 +2970,7 @@ class YouTubeMusic {
                 }
             }
             if !items.isEmpty {
-                sections.append(ChartSection(title: title.isEmpty ? "Charts" : title, items: items))
+                sections.append(ChartSection(title: title.isEmpty ? "Listas" : esSectionTitle(title), items: items))
             }
         }
         return sections

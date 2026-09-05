@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MoodAndGenresView: View {
-    @State private var genres: [MoodAndGenre] = []
+    @State private var sections: [MoodSection] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -13,8 +13,8 @@ struct MoodAndGenresView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Géneros y Estados de ánimo")
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Estados de ánimo y géneros")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(VibesColors.textPrimary)
@@ -43,14 +43,24 @@ struct MoodAndGenresView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
             } else {
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(genres) { genre in
-                        NavigationLink(destination: BrowseView(browseId: genre.id, params: genre.params, title: genre.title)) {
-                            GenreCard(genre: genre)
+                ForEach(sections) { section in
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(section.title)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(VibesColors.textPrimary)
+                            .padding(.horizontal)
+
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(section.items) { genre in
+                                NavigationLink(destination: BrowseView(browseId: genre.browseId, params: genre.params, title: genre.title)) {
+                                    GenreCard(genre: genre)
+                                }
+                            }
                         }
+                        .padding(.horizontal)
                     }
                 }
-                .padding(.horizontal)
             }
         }
         .task {
@@ -63,14 +73,14 @@ struct MoodAndGenresView: View {
         errorMessage = nil
 
         do {
-            let fetchedGenres = try await ytMusic.getMoodAndGenres()
+            let fetchedSections = try await ytMusic.getMoodAndGenreSections()
             await MainActor.run {
-                genres = fetchedGenres
+                sections = fetchedSections
             }
         } catch {
             dlog("❌ [Genres] Error loading mood & genres: \(error)")
             await MainActor.run {
-                errorMessage = "Failed to load mood & genres"
+                errorMessage = "Error al cargar géneros y estados de ánimo"
             }
         }
 

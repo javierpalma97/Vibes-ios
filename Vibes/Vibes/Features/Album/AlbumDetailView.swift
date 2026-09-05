@@ -32,7 +32,7 @@ struct AlbumDetailView: View {
                     VStack(spacing: 14) {
                         Text(error)
                             .foregroundColor(VibesColors.textSecondary)
-                        Button("Retry") {
+                        Button("Reintentar") {
                             Task {
                                 await loadAlbum()
                             }
@@ -194,7 +194,7 @@ struct AlbumHeader: View {
                 Button(action: onPlay) {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text("Play")
+                        Text("Reproducir")
                     }
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
@@ -207,7 +207,7 @@ struct AlbumHeader: View {
                 Button(action: onShuffle) {
                     HStack {
                         Image(systemName: "shuffle")
-                        Text("Shuffle")
+                        Text("Aleatorio")
                     }
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
@@ -223,7 +223,7 @@ struct AlbumHeader: View {
             Button(action: onDownloadAll) {
                 HStack {
                     Image(systemName: "arrow.down.circle")
-                    Text("Download All")
+                    Text("Descargar todo")
                 }
                 .fontWeight(.semibold)
                 .frame(maxWidth: .infinity)

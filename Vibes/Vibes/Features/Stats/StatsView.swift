@@ -65,7 +65,7 @@ struct StatsView: View {
                 // Top Songs
                 if !topSongs.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Most Played Songs")
+                        Text("Más escuchadas")
                             .font(.title2)
                             .fontWeight(.bold)
                             .padding(.horizontal)
@@ -79,7 +79,7 @@ struct StatsView: View {
                 // Top Artists
                 if !topArtists.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Top Artists")
+                        Text("Artistas populares")
                             .font(.title2)
                             .fontWeight(.bold)
                             .padding(.horizontal)

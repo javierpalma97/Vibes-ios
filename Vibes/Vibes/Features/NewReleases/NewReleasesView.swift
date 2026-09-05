@@ -15,7 +15,7 @@ struct NewReleasesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("New Releases")
+                Text("Novedades")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .foregroundColor(VibesColors.textPrimary)
@@ -35,7 +35,7 @@ struct NewReleasesView: View {
                         Text(error)
                             .foregroundColor(VibesColors.textSecondary)
 
-                        Button("Retry") {
+                        Button("Reintentar") {
                             Task {
                                 await loadNewReleases()
                             }
@@ -47,7 +47,7 @@ struct NewReleasesView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60)
                 } else if albums.isEmpty {
-                    VibesEmptyState(icon: "sparkles", title: "No new releases")
+                    VibesEmptyState(icon: "sparkles", title: "Sin novedades")
                 } else {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(albums.indices, id: \.self) { index in
@@ -64,7 +64,7 @@ struct NewReleasesView: View {
             Spacer(minLength: 140)
         }
         .vibesBackground()
-        .navigationTitle("New Releases")
+        .navigationTitle("Novedades")
         .navigationBarTitleDisplayMode(.large)
         .task {
             await loadNewReleases()
@@ -83,7 +83,7 @@ struct NewReleasesView: View {
         } catch {
             dlog("❌ [NewReleases] Error loading new releases: \(error)")
             await MainActor.run {
-                errorMessage = "Failed to load new releases"
+                errorMessage = "No se pudieron cargar las novedades"
             }
         }
 

@@ -42,7 +42,7 @@ struct LyricsView: View {
                                 .font(.system(size: 60))
                                 .foregroundColor(.secondary.opacity(0.5))
 
-                            Text("No lyrics available")
+                            Text("Sin letra disponible")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
                         }

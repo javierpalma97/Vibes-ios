@@ -56,6 +56,7 @@ struct ContentView: View {
         .onAppear {
             libraryManager.setModelContext(modelContext)
             lyricsManager.setModelContext(modelContext)
+            libraryManager.autoSyncIfNeeded()
         }
         .onChange(of: playerManager.shouldShowFullPlayer) { _, shouldShow in
             if shouldShow {

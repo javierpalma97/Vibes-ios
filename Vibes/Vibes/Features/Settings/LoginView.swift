@@ -1,8 +1,8 @@
 import SwiftUI
 import AuthenticationServices
 
-// OAuth-only login (cookie/WebView login retired: SAPISID sessions are rejected
-// by YouTube for private content; OAuth2 Bearer is the only working method).
+// Login: OAuth2 device flow (library reads) + optional web session
+// (music.youtube.com cookies, required for cloud mutations: like, playlists).
 struct LoginView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthenticationManager
@@ -16,7 +16,7 @@ struct LoginView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
+                        Button("Cancelar") {
                             dismiss()
                         }
                         .foregroundColor(VibesColors.textPrimary)
@@ -32,6 +32,7 @@ struct OAuthLoginContent: View {
     @State private var isPolling = false
     @State private var error: String?
     @State private var showImporter = false
+    @State private var showCookieLogin = false
     var onDone: () -> Void = {}
 
     var body: some View {
@@ -47,7 +48,7 @@ struct OAuthLoginContent: View {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.largeTitle)
                         .foregroundColor(.green)
-                    Text("Connected with OAuth2")
+                    Text("Conectado con OAuth2")
                         .font(.headline)
                         .foregroundColor(VibesColors.textPrimary)
                     if let token = oauth.accessToken {
@@ -55,11 +56,17 @@ struct OAuthLoginContent: View {
                             .font(.caption)
                             .foregroundColor(VibesColors.textSecondary)
                     }
-                    Text("You can play music and sync your library.")
+                    Text("Puedes reproducir música y sincronizar tu biblioteca.")
                         .font(.caption)
                         .foregroundColor(VibesColors.textSecondary)
                         .multilineTextAlignment(.center)
-                    Button("Sign Out", role: .destructive) {
+                    Button("Conectar sesión web (Me gusta y playlists)") {
+                        showCookieLogin = true
+                    }
+                    .font(.caption)
+                    .foregroundColor(VibesColors.accent)
+                    .padding(.top, 4)
+                    Button("Cerrar sesión", role: .destructive) {
                         oauth.signOut()
                     }
                     .buttonStyle(.bordered)
@@ -68,13 +75,13 @@ struct OAuthLoginContent: View {
                 .padding()
             } else if let d = device {
                 VStack(spacing: 12) {
-                    Text("Open this page")
+                    Text("Abre esta página")
                         .font(.caption)
                         .foregroundColor(VibesColors.textSecondary)
                     Link(d.verification_url, destination: URL(string: d.verification_url)!)
                         .font(.headline)
                         .foregroundColor(VibesColors.accent)
-                    Text("and enter the code:")
+                    Text("e introduce el código:")
                         .font(.caption)
                         .foregroundColor(VibesColors.textSecondary)
                     Text(d.user_code)
@@ -90,14 +97,14 @@ struct OAuthLoginContent: View {
                             .foregroundColor(VibesColors.accent)
                     }
                     if isPolling {
-                        ProgressView("Waiting for confirmation…")
+                        ProgressView("Esperando confirmación…")
                             .foregroundColor(VibesColors.textSecondary)
                             .padding(.top)
-                        Text("Expires in \(d.expires_in / 60) min")
+                        Text("Expira en \(d.expires_in / 60) min")
                             .font(.caption2)
                             .foregroundColor(VibesColors.textSecondary)
                     }
-                    Text("For your security, consider a secondary YouTube account.")
+                    Text("Por seguridad, considera usar una cuenta secundaria.")
                         .font(.caption2)
                         .foregroundColor(.orange)
                         .multilineTextAlignment(.center)
@@ -106,10 +113,10 @@ struct OAuthLoginContent: View {
                 .padding()
             } else {
                 VStack(spacing: 12) {
-                    Text("YouTube OAuth2 Login")
+                    Text("Acceso con YouTube OAuth2")
                         .font(.headline)
                         .foregroundColor(VibesColors.textPrimary)
-                    Text("Open the link on another device and authorize. No passwords leave your device.")
+                    Text("Abre el enlace en otro dispositivo y autoriza. Ninguna contraseña sale de tu dispositivo.")
                         .font(.caption)
                         .multilineTextAlignment(.center)
                         .foregroundColor(VibesColors.textSecondary)
@@ -120,7 +127,7 @@ struct OAuthLoginContent: View {
                             .foregroundColor(.red)
                             .padding(.horizontal)
                     }
-                    Button("Get Code") {
+                    Button("Obtener código") {
                         Task { await start() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -128,15 +135,21 @@ struct OAuthLoginContent: View {
                     .foregroundColor(.black)
                     .disabled(isPolling)
                     Divider().padding(.vertical, 4)
-                    Button("Import oauth.json (ytmusicapi)") {
+                    Button("Importar oauth.json (ytmusicapi)") {
                         showImporter = true
                     }
                     .font(.caption)
                     .foregroundColor(VibesColors.accent)
-                    Text("On PC: pip install ytmusicapi && ytmusicapi oauth, then share oauth.json here")
+                    Text("En el PC: pip install ytmusicapi && ytmusicapi oauth, y comparte aquí el oauth.json")
                         .font(.caption2)
                         .foregroundColor(VibesColors.textSecondary)
                         .multilineTextAlignment(.center)
+                    Divider().padding(.vertical, 4)
+                    Button("Conectar sesión web (Me gusta y playlists)") {
+                        showCookieLogin = true
+                    }
+                    .font(.caption)
+                    .foregroundColor(VibesColors.accent)
                 }
                 .padding()
             }
@@ -144,11 +157,14 @@ struct OAuthLoginContent: View {
             Spacer()
 
             if !oauth.isAuthenticated && device != nil {
-                Button("Cancel") { device = nil; isPolling = false }
+                Button("Cancelar") { device = nil; isPolling = false }
                     .foregroundColor(VibesColors.textSecondary)
             }
         }
         .task { if device == nil && !oauth.isAuthenticated { await start() } }
+        .sheet(isPresented: $showCookieLogin) {
+            CookieLoginView(onDone: { showCookieLogin = false; onDone() })
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):

@@ -26,7 +26,7 @@ struct ChartsView: View {
                             Text(error)
                                 .foregroundColor(VibesColors.textSecondary)
 
-                            Button("Retry") {
+                            Button("Reintentar") {
                                 Task {
                                     await loadCharts()
                                 }
@@ -42,7 +42,7 @@ struct ChartsView: View {
                             ChartSectionView(section: sections[index])
                         }
                     } else {
-                        VibesEmptyState(icon: "chart.line.uptrend.xyaxis", title: "No charts available")
+                        VibesEmptyState(icon: "chart.line.uptrend.xyaxis", title: "No hay listas disponibles")
                     }
 
                 Spacer(minLength: 140)
@@ -50,7 +50,7 @@ struct ChartsView: View {
             .padding(.top)
         }
         .vibesBackground()
-        .navigationTitle("Charts")
+        .navigationTitle("Éxitos")
         .navigationBarTitleDisplayMode(.large)
         .task {
             await loadCharts()
@@ -72,7 +72,7 @@ struct ChartsView: View {
             dlog("❌ [Charts] Error loading charts: \(error)")
             await MainActor.run {
                 DebugLogger.shared.log("❌ charts vista err=\(error)")
-                errorMessage = "Failed to load charts"
+                errorMessage = "No se pudieron cargar las listas"
             }
         }
 

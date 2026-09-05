@@ -308,14 +308,14 @@ struct CreatePlaylistView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("Cancelar") {
                         dismiss()
                     }
                     .foregroundColor(VibesColors.textPrimary)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button("Crear") {
                         Task {
                             _ = await libraryManager.createLocalPlaylist(name: playlistName)
                             dismiss()
@@ -351,7 +351,7 @@ struct PlaylistDetailView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Play")
+                            Text("Reproducir")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -369,7 +369,7 @@ struct PlaylistDetailView: View {
                     }) {
                         HStack {
                             Image(systemName: "shuffle")
-                            Text("Shuffle")
+                            Text("Aleatorio")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -390,7 +390,7 @@ struct PlaylistDetailView: View {
                     HStack {
                         Spacer()
                         Image(systemName: "arrow.down.circle")
-                        Text("Download All")
+                        Text("Descargar todo")
                         Spacer()
                     }
                     .foregroundColor(VibesColors.accent)

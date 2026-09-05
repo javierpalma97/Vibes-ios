@@ -20,10 +20,29 @@ class LibraryManager: ObservableObject {
     func setModelContext(_ context: ModelContext) {
         guard self.modelContext !== context else { return }
         self.modelContext = context
+        DebugLogger.shared.log("🔖 [LibraryManager] build cloudsync-2 (cookie-auth + counts + autosync)")
 
         // Load data asynchronously to avoid blocking UI on startup
         Task { @MainActor in
             await loadLocalData()
+        }
+    }
+
+    private var autoSyncDone = false
+
+    /// One automatic library sync per launch when authenticated. Fixes "nada se
+    /// sincroniza hasta entrar en Biblioteca": previously sync only ran from
+    /// LibraryView (pull-to-refresh / auth change).
+    func autoSyncIfNeeded() {
+        guard !autoSyncDone else { return }
+        autoSyncDone = true
+        guard InnerTubeClient.shared.isAuthenticated else { return }
+        Task {
+            do {
+                try await syncLibrary()
+            } catch {
+                DebugLogger.shared.log("⚠️ [LibraryManager] auto-sync failed: \(error)")
+            }
         }
     }
 
@@ -134,13 +153,43 @@ class LibraryManager: ObservableObject {
 
         dlog("🔄 [LibraryManager] Starting library sync...")
         await MainActor.run { DebugLogger.shared.log("🔄 sync start isAuth=\(InnerTubeClient.shared.isAuthenticated) \(InnerTubeClient.shared.debugAuthState)") }
+        // Vaciar primero la pool de tareas pendientes (likes/añadidos en espera)
+        await pumpOutbox()
+        if OAuthManager.bearerHeaderSync != nil {
+            DebugLogger.shared.log("☁️ [LibraryManager] Cloud ON (Data API): Me gusta y playlists se sincronizan.")
+        } else if InnerTubeClient.shared.hasCookieAuth {
+            DebugLogger.shared.log("☁️ [LibraryManager] Cloud parcial (sesión web): se intentará por InnerTube.")
+        } else {
+            DebugLogger.shared.log("☁️ [LibraryManager] Sin sesión: todo queda solo local. Inicia sesión para sincronizar en cloud.")
+        }
 
-        // Sync liked songs (batch mode to avoid reloading after each song)
+        // Sync liked songs: Data API (oficial, completa) → fallback InnerTube VLLM
         do {
             await MainActor.run { DebugLogger.shared.log("📥 getLikedSongs start") }
-            let ytLikedSongs = try await ytMusic.getLikedSongs()
-            dlog("📥 [LibraryManager] Syncing \(ytLikedSongs.count) liked songs...")
-            await MainActor.run { DebugLogger.shared.log("✅ getLikedSongs \(ytLikedSongs.count)") }
+            var ytLikedSongs: [YTSong] = []
+            var likedVia = "innerTube"
+            if OAuthManager.bearerHeaderSync != nil {
+                do {
+                    let items = try await YouTubeDataAPI.shared.getLikedItems()
+                    ytLikedSongs = items.map {
+                        YTSong(id: $0.videoId,
+                               title: $0.title.isEmpty ? $0.videoId : $0.title,
+                               artists: $0.artists,
+                               duration: nil,
+                               thumbnailUrl: $0.thumbnailUrl,
+                               albumId: nil,
+                               albumName: nil)
+                    }
+                    likedVia = "dataapi"
+                } catch {
+                    dlog("⚠️ [LibraryManager] DataAPI liked falló, usando VLLM: \(error)")
+                    ytLikedSongs = try await ytMusic.getLikedSongs()
+                }
+            } else {
+                ytLikedSongs = try await ytMusic.getLikedSongs()
+            }
+            dlog("📥 [LibraryManager] Syncing \(ytLikedSongs.count) liked songs (\(likedVia))...")
+            await MainActor.run { DebugLogger.shared.log("✅ getLikedSongs \(ytLikedSongs.count) via=\(likedVia)") }
             for ytSong in ytLikedSongs {
                 await saveSong(ytSong, liked: true, skipReload: true)
             }
@@ -169,6 +218,27 @@ class LibraryManager: ObservableObject {
             }
             for ytPlaylist in ytPlaylists {
                 await savePlaylist(ytPlaylist, skipReload: true)
+            }
+            // Data API: listas propias con conteos REALES (itemCount). Gana a TV y
+            // rellena lo que TV no trae. Merge (no sustituye: TV aporta guardadas).
+            if OAuthManager.bearerHeaderSync != nil {
+                do {
+                    let cloud = try await YouTubeDataAPI.shared.getMyPlaylists()
+                    for cp in cloud {
+                        await savePlaylist(YTPlaylist(
+                            id: cp.id,
+                            name: cp.title,
+                            author: cp.description,
+                            thumbnailUrl: cp.thumbnailUrl,
+                            songCount: cp.itemCount,
+                            playlistId: nil
+                        ), skipReload: true)
+                    }
+                    dlog("✅ [LibraryManager] DataAPI playlists: \(cloud.count) (conteos reales)")
+                    await MainActor.run { DebugLogger.shared.log("📥 dataapi playlists \(cloud.count)") }
+                } catch {
+                    dlog("⚠️ [LibraryManager] DataAPI playlists falló: \(error)")
+                }
             }
             dlog("✅ [LibraryManager] Synced \(ytPlaylists.count) playlists")
         } catch {
@@ -203,10 +273,56 @@ class LibraryManager: ObservableObject {
             dlog("⚠️ [LibraryManager] Failed to sync artists: \(error)")
         }
 
+        // Refresh track counts for YouTube playlists (the list endpoint only gives
+        // metadata, often with songCount 0; counts appear only after opening each
+        // playlist otherwise). Single reload at the end.
+        await refreshPlaylistCounts()
+
+        // Drop legacy phantom rows ("Liked Music"/LM from older builds).
+        await removeSystemPlaylistArtifacts()
+
         // Reload local data once at the end
         dlog("🔄 [LibraryManager] Reloading library data...")
         await loadLocalData()
         dlog("✅ [LibraryManager] Library sync complete")
+    }
+
+    /// Fetches the true track count of each YouTube playlist so the UI shows
+    /// numbers without having to open every playlist. Songs themselves are
+    /// still cached lazily on open (getPlaylistSongs).
+    private func refreshPlaylistCounts() async {
+        guard let context = modelContext else {
+            DebugLogger.shared.log("🔢 [LibraryManager] refresh counts: no model context")
+            return
+        }
+        // Read from the database, not from the published array (during sync with
+        // skipReload the published array is still stale until the final reload).
+        let descriptor = FetchDescriptor<Playlist>()
+        guard let all = try? context.fetch(descriptor) else {
+            DebugLogger.shared.log("🔢 [LibraryManager] refresh counts: DB fetch failed")
+            return
+        }
+        let youtubePlaylists = all.filter { $0.playlistType == .youtube }
+        DebugLogger.shared.log("🔢 [LibraryManager] refresh counts: total=\(all.count) youtube=\(youtubePlaylists.count)")
+        guard !youtubePlaylists.isEmpty else { return }
+
+        for pl in youtubePlaylists {
+            do {
+                let rawId = pl.browseId ?? pl.id
+                let browseId = (rawId.hasPrefix("VL") || rawId.hasPrefix("PL") || rawId.hasPrefix("FEmusic_") || rawId == "VLLM" || rawId == "SE" || rawId.hasPrefix("RD") || rawId.hasPrefix("MPREb_") || rawId.hasPrefix("MPSP") || rawId.hasPrefix("UC")) ? rawId : "VL\(rawId)"
+                let (ytPlaylist, _) = try await ytMusic.getPlaylist(browseId: browseId)
+                if ytPlaylist.songCount > 0 && ytPlaylist.songCount != pl.songCount {
+                    pl.songCount = ytPlaylist.songCount
+                    pl.dateModified = Date()
+                    try? context.save()
+                    DebugLogger.shared.log("🔢 [LibraryManager] \(pl.name): songCount=\(pl.songCount)")
+                } else {
+                    DebugLogger.shared.log("🔢 [LibraryManager] \(pl.name): count unchanged (\(pl.songCount))")
+                }
+            } catch {
+                DebugLogger.shared.log("⚠️ [LibraryManager] Count refresh failed for \(pl.name): \(error)")
+            }
+        }
     }
 
     func saveAlbum(_ ytAlbum: YTAlbum, skipReload: Bool = false) async {
@@ -382,20 +498,36 @@ class LibraryManager: ObservableObject {
         if let context = modelContext {
             try? context.save()
         }
-
-        // Sync with YouTube Music
-        do {
-            if song.liked {
-                try await ytMusic.likeSong(videoId: song.id)
-            } else {
-                try await ytMusic.unlikeSong(videoId: song.id)
-            }
-        } catch {
-            // Revert on failure
-            song.liked.toggle()
-        }
-
         await loadLocalData()
+
+        // Cloud vía outbox (Data API oficial + reintentos). Se queda en local al
+        // instante; la nube se actualiza en segundo plano y sobrevive a reinicios.
+        if OAuthManager.bearerHeaderSync != nil {
+            enqueueCloudTask(PendingCloudTask(
+                id: UUID().uuidString, kind: .like, videoId: song.id,
+                playlistId: nil, itemId: nil, liked: song.liked,
+                attempts: 0, createdAt: Date()
+            ))
+        } else if InnerTubeClient.shared.hasCookieAuth {
+            // Legacy: sesión web sin OAuth (WEB_REMIX+SAPISIDHASH)
+            do {
+                if song.liked {
+                    try await ytMusic.likeSong(videoId: song.id)
+                } else {
+                    try await ytMusic.unlikeSong(videoId: song.id)
+                }
+                DebugLogger.shared.log("✅ [LibraryManager] toggleLike synced (web) \(song.title)")
+            } catch {
+                song.liked.toggle()
+                if let context = modelContext {
+                    try? context.save()
+                }
+                DebugLogger.shared.log("❌ [LibraryManager] toggleLike web failed, reverted: \(error)")
+                await loadLocalData()
+            }
+        } else {
+            DebugLogger.shared.log("⚠️ [LibraryManager] toggleLike solo local (sin sesión)")
+        }
     }
 
     func updateSongLikedStatus(_ song: Song, isLiked: Bool) async {
@@ -468,9 +600,81 @@ class LibraryManager: ObservableObject {
         }
     }
 
+    /// Updates the cached song count of an EXISTING playlist. Unlike savePlaylist,
+    /// it never inserts: opening a chart/trending playlist must not add it to
+    /// "mis listas" (that was polluting the library with e.g. "Trending 20 Spain").
+    func updatePlaylistCount(playlistId: String, songCount: Int) async {
+        guard let context = modelContext else { return }
+
+        let targetId = playlistId
+        let descriptor = FetchDescriptor<Playlist>(
+            predicate: #Predicate<Playlist> { p in
+                p.id == targetId
+            }
+        )
+
+        if let existing = try? context.fetch(descriptor).first {
+            existing.songCount = songCount
+            existing.dateModified = Date()
+            try? context.save()
+            await loadLocalData()
+        }
+    }
+
+    /// Removes legacy "Liked Music" phantom rows (ids LM/VLLM) plus their orphan
+    /// song maps. Older builds parsed the Liked system tile as a playlist, which
+    /// broke add-to-playlist (edit_playlist on LM → 400). Real likes live in Song.liked.
+    func removeSystemPlaylistArtifacts() async {
+        guard let context = modelContext else { return }
+        let descriptor = FetchDescriptor<Playlist>()
+        guard let all = try? context.fetch(descriptor) else { return }
+
+        var removed = false
+        for pl in all where pl.id == "LM" || pl.id == "VLLM" || pl.browseId == "VLLM" {
+            let pid = pl.id
+            let mapDescriptor = FetchDescriptor<PlaylistSongMap>(
+                predicate: #Predicate<PlaylistSongMap> { m in
+                    m.playlistId == pid
+                }
+            )
+            if let maps = try? context.fetch(mapDescriptor) {
+                for m in maps { context.delete(m) }
+            }
+            DebugLogger.shared.log("🧹 [LibraryManager] Removing phantom playlist \(pl.name) (\(pl.id))")
+            context.delete(pl)
+            removed = true
+        }
+        if removed {
+            try? context.save()
+            await loadLocalData()
+        }
+    }
+
     func createLocalPlaylist(name: String) async -> Playlist {
         guard let context = modelContext else {
             fatalError("ModelContext not set")
+        }
+
+        // Intentar crearla en cloud primero (Data API): así nace con identidad
+        // única PL... y todo lo que se le añada sincroniza. Si falla, local.
+        if OAuthManager.bearerHeaderSync != nil {
+            do {
+                let onlineId = try await YouTubeDataAPI.shared.createPlaylist(title: name)
+                let playlist = Playlist(
+                    id: onlineId,
+                    name: name,
+                    playlistType: .youtube,
+                    songCount: 0,
+                    browseId: onlineId
+                )
+                context.insert(playlist)
+                try? context.save()
+                await loadLocalData()
+                DebugLogger.shared.log("✅ [LibraryManager] Playlist creada en cloud: \(name)")
+                return playlist
+            } catch {
+                DebugLogger.shared.log("⚠️ [LibraryManager] Create online falló, será local: \(error)")
+            }
         }
 
         let playlist = Playlist(
@@ -489,6 +693,16 @@ class LibraryManager: ObservableObject {
 
     func deletePlaylist(_ playlist: Playlist) async {
         guard let context = modelContext else { return }
+
+        if playlist.playlistType == .youtube, playlist.id.hasPrefix("PL"),
+           OAuthManager.bearerHeaderSync != nil {
+            do {
+                try await YouTubeDataAPI.shared.deletePlaylist(id: playlist.id)
+                DebugLogger.shared.log("✅ [LibraryManager] Playlist borrada en cloud: \(playlist.name)")
+            } catch {
+                DebugLogger.shared.log("⚠️ [LibraryManager] Delete online falló (se borra en local): \(error)")
+            }
+        }
 
         context.delete(playlist)
         try? context.save()
@@ -517,13 +731,21 @@ class LibraryManager: ObservableObject {
 
         try? context.save()
 
-        // Sync online with YouTube Music if user is authenticated
-        if InnerTubeClient.shared.isAuthenticated && playlist.playlistType == .youtube {
-            do {
-                try await ytMusic.addSongToPlaylist(playlistId: playlist.id, videoId: song.id)
-                dlog("✅ [LibraryManager] Synced song \(song.title) to online playlist \(playlist.name)")
-            } catch {
-                dlog("⚠️ [LibraryManager] Failed online sync to playlist \(playlist.name): \(error)")
+        // Cloud vía outbox (Data API). Solo listas de YouTube con id real (PL...).
+        if playlist.playlistType == .youtube, playlist.id.hasPrefix("PL") {
+            if OAuthManager.bearerHeaderSync != nil {
+                enqueueCloudTask(PendingCloudTask(
+                    id: UUID().uuidString, kind: .playlistAdd, videoId: song.id,
+                    playlistId: playlist.id, itemId: nil, liked: nil,
+                    attempts: 0, createdAt: Date()
+                ))
+            } else if InnerTubeClient.shared.hasCookieAuth {
+                do {
+                    try await ytMusic.addSongToPlaylist(playlistId: playlist.id, videoId: song.id)
+                    dlog("✅ [LibraryManager] Synced song \(song.title) to online playlist \(playlist.name)")
+                } catch {
+                    dlog("⚠️ [LibraryManager] Failed online sync to playlist \(playlist.name): \(error)")
+                }
             }
         }
 
@@ -541,14 +763,129 @@ class LibraryManager: ObservableObject {
         )
 
         if let map = try? context.fetch(descriptor).first {
+            let removedSongId = map.songId
             context.delete(map)
 
             playlist.songCount -= 1
             playlist.dateModified = Date()
 
             try? context.save()
+
+            if playlist.playlistType == .youtube, playlist.id.hasPrefix("PL"),
+               OAuthManager.bearerHeaderSync != nil {
+                enqueueCloudTask(PendingCloudTask(
+                    id: UUID().uuidString, kind: .playlistRemove, videoId: removedSongId,
+                    playlistId: playlist.id, itemId: nil, liked: nil,
+                    attempts: 0, createdAt: Date()
+                ))
+            }
+
             await loadLocalData()
         }
+    }
+
+    // MARK: - Cloud Outbox (tareas pendientes con reintentos)
+
+    private let outboxKey = "ytPendingCloudTasks"
+    private let outboxMaxAttempts = 5
+    private var outboxPumping = false
+
+    private func loadOutbox() -> [PendingCloudTask] {
+        guard let data = UserDefaults.standard.data(forKey: outboxKey),
+              let tasks = try? JSONDecoder().decode([PendingCloudTask].self, from: data) else { return [] }
+        return tasks
+    }
+
+    private func saveOutbox(_ tasks: [PendingCloudTask]) {
+        if let data = try? JSONEncoder().encode(tasks) {
+            UserDefaults.standard.set(data, forKey: outboxKey)
+        }
+    }
+
+    /// Encola una mutación cloud (like / añadir / quitar) y fuerza su ejecución.
+    /// La pool sobrevive a reinicios y se reintenta sola (al encolar, al sincronizar).
+    func enqueueCloudTask(_ task: PendingCloudTask) {
+        var tasks = loadOutbox()
+        if task.kind == .like {
+            // Coalescar: solo importa el último estado de cada vídeo
+            tasks.removeAll { $0.kind == .like && $0.videoId == task.videoId }
+        }
+        tasks.append(task)
+        saveOutbox(tasks)
+        DebugLogger.shared.log("☁️ [Outbox] Encolada \(task.kind.rawValue) \(task.videoId) (pendientes: \(tasks.count))")
+        Task { await pumpOutbox() }
+    }
+
+    /// Ejecuta la pool en orden FIFO.
+    func pumpOutbox() async {
+        guard !outboxPumping else { return }
+        outboxPumping = true
+        defer { outboxPumping = false }
+
+        guard OAuthManager.bearerHeaderSync != nil else {
+            if !loadOutbox().isEmpty {
+                DebugLogger.shared.log("☁️ [Outbox] Sin OAuth: \(loadOutbox().count) tareas esperan sesión")
+            }
+            return
+        }
+
+        while true {
+            var tasks = loadOutbox()
+            guard !tasks.isEmpty else { return }
+            let task = tasks.removeFirst()
+            do {
+                try await runCloudTask(task)
+                saveOutbox(tasks)
+                DebugLogger.shared.log("☁️ [Outbox] OK \(task.kind.rawValue) \(task.videoId)")
+            } catch {
+                var failed = task
+                failed.attempts += 1
+                if failed.attempts >= outboxMaxAttempts {
+                    saveOutbox(tasks)
+                    DebugLogger.shared.log("❌ [Outbox] Descartada tras \(outboxMaxAttempts) intentos: \(task.kind.rawValue) \(task.videoId) (\(error))")
+                    if task.kind == .like, let desired = task.liked {
+                        await revertLike(videoId: task.videoId, desired: desired)
+                    }
+                } else {
+                    tasks.append(failed)
+                    saveOutbox(tasks)
+                    DebugLogger.shared.log("⚠️ [Outbox] Fallo (\(failed.attempts)/\(outboxMaxAttempts)), reintento más tarde: \(error)")
+                    return
+                }
+            }
+        }
+    }
+
+    private func runCloudTask(_ task: PendingCloudTask) async throws {
+        switch task.kind {
+        case .like:
+            try await YouTubeDataAPI.shared.rateVideo(id: task.videoId, rating: task.liked == true ? .like : .none)
+        case .playlistAdd:
+            guard let playlistId = task.playlistId else { throw YouTubeDataError.badResponse("sin playlist") }
+            _ = try await YouTubeDataAPI.shared.addVideoToPlaylist(playlistId: playlistId, videoId: task.videoId)
+        case .playlistRemove:
+            if let itemId = task.itemId {
+                try await YouTubeDataAPI.shared.removeVideoFromPlaylist(itemId: itemId)
+            } else if let playlistId = task.playlistId {
+                let items = try await YouTubeDataAPI.shared.getPlaylistItems(playlistId: playlistId, max: 200)
+                if let found = items.first(where: { $0.videoId == task.videoId }) {
+                    try await YouTubeDataAPI.shared.removeVideoFromPlaylist(itemId: found.itemId)
+                }
+                // Si ya no está en cloud, se considera éxito
+            } else {
+                throw YouTubeDataError.badResponse("sin playlist")
+            }
+        }
+    }
+
+    private func revertLike(videoId: String, desired: Bool) async {
+        guard let song = await getSong(id: videoId) else { return }
+        song.liked = !desired
+        song.dateModified = Date()
+        if let context = modelContext {
+            try? context.save()
+        }
+        await loadLocalData()
     }
 
     func getPlaylistSongs(_ playlist: Playlist) async -> [Song] {

@@ -18,7 +18,7 @@ struct QueueView: View {
                     } else {
                         if queueManager.currentIndex > 0 {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("History (\(queueManager.currentIndex))")
+                                Text("Historial (\(queueManager.currentIndex))")
                                     .font(.headline)
                                     .foregroundColor(VibesColors.textPrimary)
                                     .padding(.horizontal)
@@ -50,7 +50,7 @@ struct QueueView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Now Playing")
+                            Text("Sonando ahora")
                                 .font(.headline)
                                 .foregroundColor(VibesColors.textPrimary)
                                 .padding(.horizontal)
@@ -70,7 +70,7 @@ struct QueueView: View {
 
                         if queueManager.currentIndex + 1 < queueManager.queue.count {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Up Next (\(queueManager.queue.count - queueManager.currentIndex - 1))")
+                                Text("A continuación (\(queueManager.queue.count - queueManager.currentIndex - 1))")
                                     .font(.headline)
                                     .foregroundColor(VibesColors.textPrimary)
                                     .padding(.horizontal)
@@ -111,7 +111,7 @@ struct QueueView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") {
+                    Button("Listo") {
                         dismiss()
                     }
                     .foregroundColor(VibesColors.accent)
