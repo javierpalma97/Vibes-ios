@@ -193,9 +193,14 @@ struct HomeView: View {
             }
             dlog("🏠 [Home] Loaded \(page.sections.count) sections")
         } catch {
+            // Navegar rápido cancela la petición: no es un error mostrable
+            if error is CancellationError {
+                await MainActor.run { isLoading = false }
+                return
+            }
             dlog("❌ [Home] Error loading home feed: \(error)")
             await MainActor.run {
-                errorMessage = "Failed to load home feed"
+                errorMessage = "No se pudo cargar el inicio"
             }
         }
 

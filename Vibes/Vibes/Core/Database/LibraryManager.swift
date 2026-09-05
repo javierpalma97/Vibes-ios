@@ -77,7 +77,24 @@ class LibraryManager: ObservableObject {
 
     // MARK: - Local Data Loading
 
+    /// Coalesca ráfagas de recargas (loops de saveSong, eventos de reproducción,
+    /// etc.): si ya hay una recarga en vuelo, los demás esperan a esa en vez de
+    /// lanzar otra. Evita 100 recargas seguidas, el churn de UI y que el log se
+    /// inunde (el visor in-app solo guarda las últimas).
+    private var pendingLoad: Task<Void, Never>?
+
     private func loadLocalData() async {
+        if let pending = pendingLoad {
+            await pending.value
+            return
+        }
+        let task = Task { [weak self] in await self?.performLoadLocalData() }
+        pendingLoad = task
+        await task.value
+        pendingLoad = nil
+    }
+
+    private func performLoadLocalData() async {
         guard let context = modelContext else { return }
 
         // Load liked songs

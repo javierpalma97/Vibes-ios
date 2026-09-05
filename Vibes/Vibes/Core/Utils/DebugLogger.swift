@@ -5,7 +5,7 @@ import Combine
 class DebugLogger: ObservableObject {
     static let shared = DebugLogger()
     @Published var logs: [String] = []
-    private let maxLogs = 500
+    private let maxLogs = 2000
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
