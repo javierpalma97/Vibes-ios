@@ -88,7 +88,9 @@ class LibraryManager: ObservableObject {
             await pending.value
             return
         }
-        let task = Task { [weak self] in await self?.performLoadLocalData() }
+        let task = Task<Void, Never> {
+            await self.performLoadLocalData()
+        }
         pendingLoad = task
         await task.value
         pendingLoad = nil
